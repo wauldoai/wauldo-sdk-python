@@ -1,5 +1,7 @@
 # Changelog
 
+All notable changes to the Wauldo Python SDK.
+
 ## [0.11.0] - 2026-04-30
 
 ### Added
@@ -12,8 +14,6 @@
 
 ### Changed
 - Repository URL migrated to github.com/wauldoai.
-
-All notable changes to the Wauldo Python SDK.
 
 ## [0.1.0] - 2026-03-16
 
