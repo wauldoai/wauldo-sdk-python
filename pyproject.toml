@@ -44,10 +44,10 @@ dev = [
 [project.urls]
 Homepage = "https://wauldo.com"
 Documentation = "https://wauldo.com/docs"
-Repository = "https://github.com/wauldo/wauldo-sdk-python"
-"Bug Tracker" = "https://github.com/wauldo/wauldo-sdk-python/issues"
+Repository = "https://github.com/wauldoai/wauldo-sdk-python"
+"Bug Tracker" = "https://github.com/wauldoai/wauldo-sdk-python/issues"
 RapidAPI = "https://rapidapi.com/binnewzzin/api/smart-rag-api"
-Source = "https://github.com/wauldo/wauldo-sdk-python"
+Source = "https://github.com/wauldoai/wauldo-sdk-python"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/wauldo"]

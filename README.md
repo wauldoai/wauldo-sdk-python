@@ -129,7 +129,7 @@ Get your free API key (300 req/month): [RapidAPI](https://rapidapi.com/binnewzzi
 
 ## Contributing
 
-Found a bug? Have a feature request? [Open an issue](https://github.com/wauldo/wauldo-sdk-python/issues).
+Found a bug? Have a feature request? [Open an issue](https://github.com/wauldoai/wauldo-sdk-python/issues).
 
 ## License
 
