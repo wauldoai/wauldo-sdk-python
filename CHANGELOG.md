@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0] - 2026-04-30
+
+### Added
+- `src/wauldo/agents.py` + `agents_types.py` — Tasks API client.
+- `src/wauldo/memory.py` — agent memory bindings.
+- `src/wauldo/async_client.py` + `async_transport.py` — async HTTP path.
+- `src/wauldo/cli.py` — CLI helper.
+- `tests/test_agents_memory.py`, `test_agents_types.py`.
+- `PUBLISH.md` — release procedure for PyPI.
+
+### Changed
+- Repository URL migrated to github.com/wauldoai.
+
 All notable changes to the Wauldo Python SDK.
 
 ## [0.1.0] - 2026-03-16
