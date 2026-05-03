@@ -31,6 +31,7 @@ from .http_types import (
     RagSource,
     RagUploadResponse,
 )
+from .history import HistoryClient
 from .mock_client import MockHttpClient
 from .models import (
     Chunk,
@@ -54,6 +55,7 @@ __all__ = [
     "AsyncAgentClient",
     # HTTP Client
     "HttpClient",
+    "HistoryClient",
     "MockHttpClient",
     "Conversation",
     "ChatRequest",
