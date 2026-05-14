@@ -124,6 +124,91 @@ class AgentRunResponse:
         )
 
 
+# ── Revisions ────────────────────────────────────────────────────────────
+
+
+@dataclass
+class AgentRevision:
+    """Immutable snapshot of an agent's ``AgentContractV2`` payload.
+
+    Each revision is content-addressed via ``sha256`` and identified by a
+    monotone ``rev`` integer. Mirrors AWS ECS task-definition revisions.
+    """
+
+    rev: int
+    sha256: str
+    contract_json: str
+    created_at: int
+    message: Optional[str] = None
+    created_by: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "AgentRevision":
+        return cls(
+            rev=int(d["rev"]),
+            sha256=d["sha256"],
+            contract_json=d["contract_json"],
+            created_at=int(d.get("created_at", 0)),
+            message=d.get("message"),
+            created_by=d.get("created_by"),
+        )
+
+
+@dataclass
+class CreateRevisionResponse:
+    rev: int
+    sha256: str
+    active_rev: int
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "CreateRevisionResponse":
+        return cls(
+            rev=int(d["rev"]),
+            sha256=d["sha256"],
+            active_rev=int(d.get("active_rev", 0)),
+        )
+
+
+@dataclass
+class ShareResponse:
+    """Result of publishing or fetching a public share link for a task.
+
+    ``expires_at`` is epoch milliseconds, or ``None`` for paid tenants
+    (no expiration). Free-tier shares default to a 30-day TTL ; once
+    elapsed, the public ``GET /v1/runs/<share_id>`` returns 404.
+    """
+
+    share_id: str
+    url: str
+    expires_at: Optional[int] = None
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ShareResponse":
+        exp = d.get("expires_at")
+        return cls(
+            share_id=d["share_id"],
+            url=d["url"],
+            expires_at=int(exp) if exp is not None else None,
+        )
+
+
+@dataclass
+class ListRevisionsResponse:
+    revisions: List[AgentRevision]
+    active_rev: int
+    head_rev: int
+    count: int
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ListRevisionsResponse":
+        return cls(
+            revisions=[AgentRevision.from_dict(r) for r in d.get("revisions", [])],
+            active_rev=int(d.get("active_rev", 0)),
+            head_rev=int(d.get("head_rev", 0)),
+            count=int(d.get("count", 0)),
+        )
+
+
 # ── Tasks ────────────────────────────────────────────────────────────────
 
 

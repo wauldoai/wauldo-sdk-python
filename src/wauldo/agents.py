@@ -27,7 +27,11 @@ from typing import Any, Dict, Iterator, List, Optional
 from .agents_types import (
     Agent,
     AgentList,
+    AgentRevision,
     AgentRunResponse,
+    CreateRevisionResponse,
+    ListRevisionsResponse,
+    ShareResponse,
     StateTransition,
     Task,
 )
@@ -180,6 +184,60 @@ class AgentsClient:
         """DELETE /v1/agents/:id — returns None on success."""
         self._request("DELETE", f"/v1/agents/{agent_id}")
 
+    # ── Revisions (ECS-style versioning) ─────────────────────────────
+
+    def create_revision(
+        self,
+        agent_id: str,
+        custom_preset: Dict[str, Any],
+        message: Optional[str] = None,
+        set_active: bool = True,
+    ) -> CreateRevisionResponse:
+        """POST /v1/agents/:id/revisions — mint an immutable revision.
+
+        ``custom_preset`` is a full ``AgentContractV2`` JSON payload. The
+        server validates it (size, depth, states, cycle, tools, quota)
+        and stores an immutable snapshot keyed by SHA-256. When
+        ``set_active=True`` (default) the new revision becomes the agent's
+        live revision; ``set_active=False`` stages it for review.
+        """
+        body: Dict[str, Any] = {
+            "custom_preset": custom_preset,
+            "set_active": set_active,
+        }
+        if message is not None:
+            body["message"] = message
+        return CreateRevisionResponse.from_dict(
+            self._request("POST", f"/v1/agents/{agent_id}/revisions", body)
+        )
+
+    def list_revisions(self, agent_id: str) -> ListRevisionsResponse:
+        """GET /v1/agents/:id/revisions — list revisions newest-first."""
+        return ListRevisionsResponse.from_dict(
+            self._request("GET", f"/v1/agents/{agent_id}/revisions")
+        )
+
+    def get_revision(self, agent_id: str, rev: int) -> AgentRevision:
+        """GET /v1/agents/:id/revisions/:rev — fetch one revision verbatim."""
+        return AgentRevision.from_dict(
+            self._request("GET", f"/v1/agents/{agent_id}/revisions/{rev}")
+        )
+
+    def set_active_revision(self, agent_id: str, rev: int) -> Agent:
+        """PATCH /v1/agents/:id/active-revision — O(1) rollback / promotion.
+
+        No LLM cost — the revision is already validated and stored. Use
+        this to roll back to a previous good revision when the current
+        one breaks in production.
+        """
+        return Agent.from_dict(
+            self._request(
+                "PATCH",
+                f"/v1/agents/{agent_id}/active-revision",
+                {"rev": rev},
+            )
+        )
+
     # ── Runs ─────────────────────────────────────────────────────────
 
     def run(
@@ -217,6 +275,35 @@ class AgentsClient:
     def cancel_task(self, task_id: str) -> None:
         """DELETE /v1/tasks/:id — cancel a queued or running task."""
         self._request("DELETE", f"/v1/tasks/{task_id}")
+
+    # ── Shareable runs ───────────────────────────────────────────────
+
+    def share_task(self, task_id: str) -> ShareResponse:
+        """POST /v1/tasks/:id/share — publish a run as a public URL.
+
+        Idempotent : calling on an already-shared task returns the
+        existing :class:`ShareResponse` without bumping the per-tenant
+        cap. The returned ``url`` (form ``https://wauldo.com/r/<id>``)
+        can be pasted anywhere — anyone with the link sees the verdict
+        + claims + sources + timeline through a strict-whitelist
+        projection (no ``custom_preset`` / ``wauldo_toml`` / system
+        prompt / tool args ever leave the tenant).
+
+        Free-tier tenants get a 30-day TTL ; paid tenants get
+        ``expires_at = None`` (no expiration).
+        """
+        return ShareResponse.from_dict(
+            self._request("POST", f"/v1/tasks/{task_id}/share", {})
+        )
+
+    def unshare_task(self, task_id: str) -> None:
+        """DELETE /v1/tasks/:id/share — make a published run private again.
+
+        Idempotent : calling on a never-published task returns 204.
+        Subsequent ``GET /v1/runs/<share_id>`` for the cleared id
+        returns 404.
+        """
+        self._request("DELETE", f"/v1/tasks/{task_id}/share")
 
     def wait_for_task(
         self,

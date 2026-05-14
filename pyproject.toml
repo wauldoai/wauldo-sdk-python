@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wauldo"
-version = "0.12.0"
+version = "0.17.0"
 description = "Official Python SDK for Wauldo — Verified AI answers from your documents"
 readme = "README.md"
 license = {text = "MIT"}
@@ -33,12 +33,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Drop-in middleware for the OpenAI SDK : `pip install 'wauldo[openai]'`
+# enables `wauldo.openai.with_verification(client)` to add a verified
+# `.wauldo` namespace to every `chat.completions.create()` response.
+openai = ["openai>=1.0,<2.0", "httpx>=0.24"]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0",
     "mypy>=1.0.0",
     "ruff>=0.1.0",
+    # Lets the dev install + test the openai middleware without a
+    # second `pip install` step.
+    "openai>=1.0,<2.0",
+    "httpx>=0.24",
 ]
 
 [project.urls]
