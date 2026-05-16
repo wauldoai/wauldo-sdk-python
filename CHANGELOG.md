@@ -2,6 +2,11 @@
 
 All notable changes to the Wauldo Python SDK.
 
+## [0.18.0] - 2026-05-16
+
+### Added
+- `WorkflowsClient.update(workflow_id, name, start_at, states, description=None)` — edit a workflow in place via `PATCH /v1/workflows/:id`. Body shape identical to `create`. Server keeps id/tenant_id/created_at, bumps `updated_at` and the monotonic `version`. Closes the SDK-parity gap left when the PATCH endpoint shipped in monorepo commit `54d533b` without the matching SDK method.
+
 ## [0.17.0] - 2026-05-14
 
 ### Added

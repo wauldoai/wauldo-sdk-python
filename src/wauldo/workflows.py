@@ -230,6 +230,28 @@ class WorkflowsClient:
         resp = self._request("POST", "/v1/workflows", body)
         return Workflow.from_dict(resp["workflow"])
 
+    def update(
+        self,
+        workflow_id: str,
+        name: str,
+        start_at: str,
+        states: Dict[str, Any],
+        description: Optional[str] = None,
+    ) -> Workflow:
+        """PATCH /v1/workflows/:id — replace the workflow definition in place.
+
+        Body shape is identical to :meth:`create`. The server keeps the
+        workflow id, tenant_id, and created_at ; refreshes
+        name/description/start_at/states ; bumps ``updated_at`` and the
+        monotonic ``version`` int. Same validations as create — cycles,
+        transition targets, choice operators. Returns the updated workflow.
+        """
+        body: Dict[str, Any] = {"name": name, "start_at": start_at, "states": states}
+        if description is not None:
+            body["description"] = description
+        resp = self._request("PATCH", f"/v1/workflows/{workflow_id}", body)
+        return Workflow.from_dict(resp["workflow"])
+
     def list(self) -> WorkflowList:
         """GET /v1/workflows — list workflows for the calling tenant."""
         return WorkflowList.from_dict(self._request("GET", "/v1/workflows"))
