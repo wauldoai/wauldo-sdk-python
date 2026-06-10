@@ -3,18 +3,11 @@
 These tests hit a mock HTTP server via urllib + a stub handler so we
 never need a real Wauldo instance running. They validate URL
 construction, header injection, body shapes, and error propagation.
-
-We import agents.py and memory.py as standalone modules (not through
-the ``wauldo`` package) so the tests survive unrelated package-level
-import errors in __init__.py.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import os
-import sys
 import threading
 import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -22,25 +15,8 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-_SRC_DIR = os.path.join(_THIS_DIR, "..", "src", "wauldo")
-
-
-def _load_module(name: str, filename: str):
-    path = os.path.join(_SRC_DIR, filename)
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_agents = _load_module("_wauldo_agents", "agents.py")
-_memory = _load_module("_wauldo_memory", "memory.py")
-
-AgentsClient = _agents.AgentsClient
-MemoryClient = _memory.MemoryClient
+from wauldo.agents import AgentsClient
+from wauldo.memory import MemoryClient
 
 
 # ─── Fake server ──────────────────────────────────────────────────────
@@ -146,7 +122,7 @@ def test_agents_create_sends_full_body(server):
         description="test",
         preset="general_task",
     )
-    assert out["id"] == "a1"
+    assert out.id == "a1"
     req = handler.requests[0]
     assert req["path"] == "/v1/agents"
     assert req["body"]["name"] == "bot"
@@ -157,7 +133,10 @@ def test_agents_create_sends_full_body(server):
 
 def test_agents_create_omits_none_optional_fields(server):
     url, handler = server
-    handler.responses["POST /v1/agents"] = (201, {"id": "a"})
+    handler.responses["POST /v1/agents"] = (
+        201,
+        {"id": "a", "tenant_id": "t", "name": "x", "wauldo_toml": "[agent]\n[model]"},
+    )
     client = AgentsClient(base_url=url)
     client.create(name="x", wauldo_toml="[agent]\n[model]")
     body = handler.requests[0]["body"]
@@ -179,15 +158,21 @@ def test_agents_list_query_string(server):
 
 def test_agents_get(server):
     url, handler = server
-    handler.responses["GET /v1/agents/abc"] = (200, {"id": "abc"})
+    handler.responses["GET /v1/agents/abc"] = (
+        200,
+        {"id": "abc", "tenant_id": "t", "name": "bot", "wauldo_toml": "[agent]"},
+    )
     client = AgentsClient(base_url=url)
     out = client.get("abc")
-    assert out["id"] == "abc"
+    assert out.id == "abc"
 
 
 def test_agents_update_only_sends_provided_fields(server):
     url, handler = server
-    handler.responses["PATCH /v1/agents/id1"] = (200, {"id": "id1"})
+    handler.responses["PATCH /v1/agents/id1"] = (
+        200,
+        {"id": "id1", "tenant_id": "t", "name": "bot", "wauldo_toml": "[agent]"},
+    )
     client = AgentsClient(base_url=url)
     client.update("id1", description="new")
     body = handler.requests[0]["body"]
@@ -209,7 +194,7 @@ def test_agents_run_forwards_verification_mode(server):
     )
     client = AgentsClient(base_url=url)
     out = client.run("bot", "Hello", verification_mode="strict")
-    assert out["task_id"] == "tk1"
+    assert out.task_id == "tk1"
     assert handler.requests[0]["body"]["verification_mode"] == "strict"
 
 

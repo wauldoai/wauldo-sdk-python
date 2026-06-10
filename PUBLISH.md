@@ -1,64 +1,32 @@
-# SDK publish checklist
+# Publishing
 
-Run from the repo root. These commands are user actions (they require
-credentials that live on your workstation, not in CI).
+Releases are automated via GitHub Actions + PyPI Trusted Publishing
+(OIDC). No tokens or credentials are stored anywhere.
 
-## 1. Python — PyPI 0.8.2 → 0.9.0
+## Release flow
 
-```bash
-cd sdk-python
-pip install --user --break-system-packages build twine
-python3 -m build                 # builds wheel + sdist under dist/
-twine check dist/*               # metadata validation
-twine upload dist/*              # prompts for PyPI token
-```
+1. Bump the version in `pyproject.toml` **and** `src/wauldo/__init__.py`
+   (`__version__`) — CI rejects a mismatch.
+2. Update `CHANGELOG.md`.
+3. Tag and push:
 
-Verification:
+   ```bash
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+
+The tag triggers `.github/workflows/publish.yml`: test matrix
+(Python 3.9–3.12) → version/tag consistency check → build → publish to
+PyPI via OIDC → GitHub Release with auto-generated notes.
+
+## Verification
 
 ```bash
 pip install --upgrade wauldo
-python3 -c "import wauldo; print(wauldo.__version__)"   # → 0.9.0
+python3 -c "import wauldo; print(wauldo.__version__)"
 ```
 
-## 2. TypeScript — npm 0.7.2 → 0.8.0
+## Manual fallback (CI outage only)
 
 ```bash
-cd sdk-typescript
-npm run build                    # tsup → dist/
-npm pack --dry-run               # sanity check tarball contents
-npm publish --access public      # needs `npm login` done once
+python3 -m build && twine check dist/* && twine upload dist/*
 ```
-
-Verification:
-
-```bash
-npm view wauldo@latest version   # → 0.8.0
-```
-
-## 3. Rust — crates.io 0.7.0 → 0.8.0
-
-```bash
-cd sdk-rust
-cargo publish --dry-run          # full build + metadata check
-cargo publish                    # credentials in ~/.cargo/credentials.toml
-```
-
-Verification:
-
-```bash
-curl -sS -H 'User-Agent: sanity' https://crates.io/api/v1/crates/wauldo \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['crate']['max_version'])"
-# → 0.8.0
-```
-
-## 4. Sync public repos (blocked while GitHub account suspended)
-
-Each SDK lives in a public mirror repo. Re-sync after publish so
-`github.com/wauldo/wauldo-sdk-*` stays in lockstep with the registry:
-
-- `wauldo/wauldo-sdk-python` — copy `sdk-python/` over, commit, push.
-- `wauldo/wauldo-sdk-js` — same with `sdk-typescript/`.
-- `wauldo/wauldo-sdk-rust` — same with `sdk-rust/`.
-
-Current blocker: the GitHub account is suspended (see MEMORY.md).
-Unblocks once the appeal is resolved.

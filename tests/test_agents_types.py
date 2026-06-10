@@ -7,7 +7,7 @@ integration against a live server is exercised in the E2E smoke test.
 
 from __future__ import annotations
 
-from wauldo import (
+from wauldo.agents_types import (
     Agent,
     AgentList,
     AgentRunResponse,
