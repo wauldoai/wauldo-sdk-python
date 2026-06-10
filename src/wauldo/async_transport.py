@@ -12,6 +12,21 @@ from .exceptions import AgentConnectionError, AgentTimeoutError, ServerError, Wa
 logger = logging.getLogger("wauldo")
 
 
+def _import_aiohttp():
+    """Import aiohttp with a friendly message instead of a raw ImportError.
+
+    The async client requires the optional ``aiohttp`` dependency, which the
+    base ``pip install wauldo`` does not pull in."""
+    try:
+        import aiohttp
+    except ImportError as e:  # pragma: no cover - exercised via async path
+        raise ImportError(
+            "The async client requires aiohttp. Install it with: "
+            "pip install 'wauldo[async]'"
+        ) from e
+    return aiohttp
+
+
 class AsyncHttpTransport:
 
     def __init__(
@@ -35,7 +50,7 @@ class AsyncHttpTransport:
 
     async def _get_session(self):
         if self._session is None or self._session.closed:
-            import aiohttp
+            aiohttp = _import_aiohttp()
             self._session = aiohttp.ClientSession()
         return self._session
 
@@ -47,7 +62,7 @@ class AsyncHttpTransport:
     async def execute(
         self, method: str, url: str, data: Optional[bytes] = None, timeout_ms: Optional[int] = None,
     ) -> bytes:
-        import aiohttp
+        aiohttp = _import_aiohttp()
 
         effective_timeout = timeout_ms / 1000.0 if timeout_ms else self.timeout
         ct = aiohttp.ClientTimeout(total=effective_timeout)

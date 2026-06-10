@@ -256,16 +256,56 @@ class AsyncHttpClient:
         data = await self._request("POST", "/v1/orchestrator/parallel", {"prompt": prompt})
         return OrchestratorResponse.model_validate_json(data)
 
+    async def fact_check(
+        self,
+        text: str,
+        source_context: str,
+        mode: str = "lexical",
+        query: "str | None" = None,
+        relevance_mode: "str | None" = None,
+    ) -> FactCheckResponse:
+        """POST /v1/fact-check — Standalone hallucination guard.
+
+        Async counterpart of ``HttpClient.fact_check``. ``source_context`` is
+        required (the server rejects a missing context with 400). Returns a
+        typed verdict (``verified`` / ``weak`` / ``rejected``) and recommended
+        ``action`` (``allow`` / ``review`` / ``block``). When ``query`` is
+        provided, the response includes a ``relevance`` block decoupled from
+        the factual verdict (``relevance_mode``: only ``"fast"`` currently).
+        """
+        if not text:
+            raise ValidationError("text cannot be empty", field="text")
+        if not source_context:
+            raise ValidationError(
+                "source_context is required for verification", field="source_context"
+            )
+        if mode not in ("lexical", "hybrid", "semantic"):
+            raise ValidationError(
+                f"mode must be one of ('lexical', 'hybrid', 'semantic'), got {mode!r}",
+                field="mode",
+            )
+        if relevance_mode is not None and query is None:
+            raise ValidationError(
+                "relevance_mode requires query to be provided", field="relevance_mode"
+            )
+        body: dict = {"text": text, "source_context": source_context, "mode": mode}
+        if query is not None:
+            body["query"] = query
+        if relevance_mode is not None:
+            body["relevance_mode"] = relevance_mode
+        data = await self._request("POST", "/v1/fact-check", body)
+        return FactCheckResponse.model_validate_json(data)
+
     async def guard(
         self,
         text: str,
         source_context: str,
         mode: str = "lexical",
+        query: "str | None" = None,
+        relevance_mode: "str | None" = None,
     ) -> FactCheckResponse:
-        """POST /v1/fact-check — Guard hallucination firewall."""
-        body: dict = {"text": text, "source_context": source_context, "mode": mode}
-        data = await self._request("POST", "/v1/fact-check", body)
-        return FactCheckResponse.model_validate_json(data)
+        """Deprecated alias for :meth:`fact_check`. Kept for back-compat."""
+        return await self.fact_check(text, source_context, mode, query, relevance_mode)
 
     async def verify_citation(
         self,

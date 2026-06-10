@@ -14,16 +14,21 @@ from .http_types import (
     ChatRequest,
     ChatResponse,
     EmbeddingResponse,
+    FactCheckResponse,
     ModelList,
     OrchestratorResponse,
     RagQueryResponse,
     RagUploadResponse,
+    VerifyCitationResponse,
 )
 
 if TYPE_CHECKING:
     from .conversation import Conversation
 
 logger = logging.getLogger("wauldo")
+
+#: Verification modes accepted by ``/v1/fact-check``.
+FACT_CHECK_MODES = ("lexical", "hybrid", "semantic")
 
 
 class HttpClient:
@@ -205,6 +210,78 @@ class HttpClient:
         """POST /v1/orchestrator/execute -- Route to best specialist agent."""
         data = self._request("POST", "/v1/orchestrator/execute", {"prompt": prompt})
         return OrchestratorResponse.model_validate_json(data)
+
+    # ── Fact-checking / Guard ────────────────────────────────────────────
+
+    def fact_check(
+        self,
+        text: str,
+        source_context: str,
+        mode: str = "lexical",
+        query: Optional[str] = None,
+        relevance_mode: Optional[str] = None,
+    ) -> FactCheckResponse:
+        """POST /v1/fact-check -- Standalone hallucination guard.
+
+        Verifies ``text`` against ``source_context`` and returns a typed
+        verdict (``verified`` / ``weak`` / ``rejected``) plus a recommended
+        ``action`` (``allow`` / ``review`` / ``block``) and per-claim detail.
+
+        Args:
+            text: The response/text to verify. Must be non-empty.
+            source_context: Ground-truth context to check claims against.
+                Required -- the server rejects a missing context with 400.
+            mode: ``"lexical"`` (fast), ``"hybrid"`` or ``"semantic"``.
+            query: Original user question. When provided, the response
+                includes a ``relevance`` block scoring how well ``text``
+                addresses it -- decoupled from the factual verdict
+                (verified + off_topic is a valid combination).
+            relevance_mode: Relevance scoring mode. Only ``"fast"``
+                (embedding cosine) is currently supported server-side.
+                Requires ``query``.
+        """
+        if not text:
+            raise ValueError("text cannot be empty")
+        if not source_context:
+            raise ValueError("source_context is required for verification")
+        if mode not in FACT_CHECK_MODES:
+            raise ValueError(f"mode must be one of {FACT_CHECK_MODES}, got {mode!r}")
+        if relevance_mode is not None and query is None:
+            raise ValueError("relevance_mode requires query to be provided")
+        body: dict[str, Any] = {"text": text, "source_context": source_context, "mode": mode}
+        if query is not None:
+            body["query"] = query
+        if relevance_mode is not None:
+            body["relevance_mode"] = relevance_mode
+        data = self._request("POST", "/v1/fact-check", body)
+        return FactCheckResponse.model_validate_json(data)
+
+    def guard(
+        self,
+        text: str,
+        source_context: str,
+        mode: str = "lexical",
+        query: Optional[str] = None,
+        relevance_mode: Optional[str] = None,
+    ) -> FactCheckResponse:
+        """Alias for :meth:`fact_check`, kept for parity with the async / TS /
+        Rust SDKs (all of which expose ``guard``)."""
+        return self.fact_check(text, source_context, mode, query, relevance_mode)
+
+    def verify_citation(
+        self,
+        text: str,
+        sources: Optional[List[dict]] = None,
+        threshold: Optional[float] = None,
+    ) -> VerifyCitationResponse:
+        """POST /v1/verify -- Validate inline citations against sources."""
+        body: dict[str, Any] = {"text": text}
+        if sources is not None:
+            body["sources"] = sources
+        if threshold is not None:
+            body["threshold"] = threshold
+        data = self._request("POST", "/v1/verify", body)
+        return VerifyCitationResponse.model_validate_json(data)
 
     def orchestrate_parallel(self, prompt: str) -> OrchestratorResponse:
         """POST /v1/orchestrator/parallel -- Run all 4 specialists in parallel."""

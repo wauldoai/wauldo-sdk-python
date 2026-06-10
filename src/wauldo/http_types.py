@@ -120,6 +120,22 @@ class RagUploadResponse(BaseModel):
     chunks_count: int
 
 
+class UploadFileResponse(BaseModel):
+    """Response from POST /v1/upload-file (multipart document upload).
+
+    Mirrors the server ``UploadResponse`` in wauldo-api. Only the two
+    core fields are required; the richer fields are optional so the SDK
+    stays forward/backward compatible across server versions.
+    """
+
+    document_id: str
+    chunks_count: int
+    indexed_at: Optional[str] = None
+    content_type: Optional[str] = None
+    trace_id: Optional[str] = None
+    quality: Optional[dict[str, Any]] = None
+
+
 class RagSource(BaseModel):
     document_id: str
     content: str
@@ -175,3 +191,78 @@ class RagQueryResponse(BaseModel):
 
 class OrchestratorResponse(BaseModel):
     final_output: str
+
+
+# ── Fact-checking / Guard ────────────────────────────────────────────────
+# Mirrors the server DTOs in wauldo-api/src/dtos/quality.rs. Keep field
+# names in lockstep with `FactCheckResponse` / `ClaimResult` there — this
+# is the honesty-critical surface every integration (NeMo, LangChain…)
+# builds on, so it must reflect the real `/v1/fact-check` shape exactly.
+
+
+class ClaimResult(BaseModel):
+    """A single claim extracted from the verified text."""
+
+    text: str
+    claim_type: str
+    supported: bool
+    confidence: float
+    confidence_label: str
+    verdict: str  # verified | weak | rejected
+    action: str  # allow | review | block
+    reason: Optional[str] = None
+    evidence: Optional[str] = None
+
+
+class RelevanceResult(BaseModel):
+    """Relevance of the answer to the user query — decoupled from factuality.
+
+    A response can be fully verified against sources AND off-topic for the
+    question asked. This block never influences ``verdict`` / ``confidence``.
+    """
+
+    score: float  # raw cosine similarity (0.0-1.0), model-specific scale
+    verdict: str  # relevant | partial | off_topic
+    rationale: Optional[str] = None  # only populated by future judge modes
+
+
+class FactCheckResponse(BaseModel):
+    """Response from POST /v1/fact-check (the standalone guard endpoint)."""
+
+    verdict: str  # verified | weak | rejected
+    action: str  # allow | review | block
+    hallucination_rate: float
+    mode: str
+    total_claims: int
+    supported_claims: int
+    confidence: float
+    claims: List[ClaimResult]
+    mode_warning: Optional[str] = None
+    # Only present when `query` was provided AND computable. Decoupled
+    # from the factual verdict above.
+    relevance: Optional[RelevanceResult] = None
+    # Why relevance could not be computed (query provided but embeddings
+    # unavailable). Never set when `relevance` is present.
+    relevance_warning: Optional[str] = None
+    processing_time_ms: int
+
+
+class CitationDetail(BaseModel):
+    """One citation validation result."""
+
+    citation: str
+    source_name: str
+    is_valid: bool
+
+
+class VerifyCitationResponse(BaseModel):
+    """Response from POST /v1/verify (citation validation)."""
+
+    citation_ratio: float
+    has_sufficient_citations: bool
+    sentence_count: int
+    citation_count: int
+    uncited_sentences: List[str]
+    citations: Optional[List[CitationDetail]] = None
+    phantom_count: Optional[int] = None
+    processing_time_ms: int

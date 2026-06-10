@@ -72,6 +72,33 @@ for source in result.sources:
     print(f"  Source ({source.score:.0%}): {source.content[:80]}")
 ```
 
+### Guard — Fact-Check Any Text
+
+```python
+# Verify a response against ground-truth sources
+result = client.fact_check(
+    text="Returns are accepted within 60 days.",
+    source_context="Our return policy: 14 days.",
+)
+print(result.verdict)  # rejected
+print(result.action)   # block
+
+# Optional: score relevance to the original question (decoupled from factuality)
+result = client.fact_check(
+    text="Rust was first released in 2010 by Mozilla Research.",
+    source_context="Rust is a systems language released in 2010 by Mozilla Research.",
+    query="What year was Rust released?",
+)
+print(result.verdict)  # verified
+if result.relevance:   # None when relevance could not be computed (see relevance_warning)
+    print(result.relevance.verdict)  # relevant | partial | off_topic
+    print(result.relevance.score)    # cosine similarity — interpret through verdict, not absolute value
+```
+
+A response can be fully **verified** against sources and still **off-topic**
+for the question asked — the `relevance` block never influences the factual
+verdict. Currently only `relevance_mode="fast"` (embedding cosine) is supported.
+
 ### Streaming (SSE)
 
 ```python

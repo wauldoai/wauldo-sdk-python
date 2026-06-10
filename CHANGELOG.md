@@ -2,6 +2,33 @@
 
 All notable changes to the Wauldo Python SDK.
 
+## [0.20.0] - 2026-06-10
+
+### Added
+- `fact_check` / `guard` (sync + async): optional `query` and `relevance_mode` params — when `query` is provided, the response carries a `relevance` block (`RelevanceResult`: `score`, `verdict` relevant/partial/off_topic, `rationale`) scoring how well the text answers the question, fully decoupled from the factual verdict. `relevance_warning` explains when relevance could not be computed. Only `relevance_mode="fast"` is supported server-side today.
+
+## [0.19.1] - 2026-06-07
+
+### Fixed
+- `fact_check` / `guard`: `source_context` is now **required** (was optional). The server rejects a missing context with 400, so the optional form always failed at runtime. Surfaced by a live dogfooding pass.
+- `HttpClient` (sync) now exposes `guard()` — it was missing while the async / TS / Rust clients all had it.
+- Async client now raises a clear `ImportError` ("pip install 'wauldo[async]'") when `aiohttp` is missing, instead of a raw `ModuleNotFoundError`.
+
+### Added
+- Client-side validation on `fact_check` (empty `text`, empty `source_context`, invalid `mode`) — fails fast with `ValueError` / `ValidationError` instead of a server round-trip.
+
+## [0.19.0] - 2026-06-07
+
+### Added
+- `HttpClient.fact_check(text, source_context=None, mode="lexical")` (sync) and `HttpClient.verify_citation(text, sources=None, threshold=None)` — public verify surface on the sync client, mirroring the async client. Targets `POST /v1/fact-check` and `POST /v1/verify`.
+- Typed response models `FactCheckResponse`, `ClaimResult`, `VerifyCitationResponse`, `CitationDetail`, `UploadFileResponse` — aligned with the real server DTOs in `wauldo-api/src/dtos/quality.rs`. All exported from `wauldo`.
+
+### Fixed
+- `AsyncHttpClient` was unimportable: it referenced `FactCheckResponse` / `VerifyCitationResponse` / `UploadFileResponse`, none of which were defined (`ImportError`). All three now exist.
+
+### Changed
+- `AsyncHttpClient.fact_check` is the canonical name; `guard()` kept as a deprecated back-compat alias.
+
 ## [0.18.0] - 2026-05-16
 
 ### Added

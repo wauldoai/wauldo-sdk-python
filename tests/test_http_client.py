@@ -201,3 +201,113 @@ def test_chat_request_json_roundtrip():
     parsed = json.loads(json_str)
     assert parsed["model"] == "model-1"
     assert parsed["messages"][0]["content"] == "test"
+
+
+# ============================================================================
+# fact_check / guard validation (client-side, no network)
+# ============================================================================
+
+
+def test_sync_client_exposes_guard_alias():
+    c = HttpClient(base_url="http://localhost:3000")
+    assert hasattr(c, "guard") and callable(c.guard)
+
+
+def test_fact_check_requires_source_context():
+    import pytest
+
+    c = HttpClient(base_url="http://localhost:3000")
+    with pytest.raises(ValueError, match="source_context is required"):
+        c.fact_check("Some claim.", "")
+
+
+def test_fact_check_rejects_empty_text():
+    import pytest
+
+    c = HttpClient(base_url="http://localhost:3000")
+    with pytest.raises(ValueError, match="text cannot be empty"):
+        c.fact_check("", "context")
+
+
+def test_fact_check_rejects_invalid_mode():
+    import pytest
+
+    c = HttpClient(base_url="http://localhost:3000")
+    with pytest.raises(ValueError, match="mode must be one of"):
+        c.fact_check("claim", "context", mode="banana")
+
+def test_fact_check_rejects_relevance_mode_without_query():
+    import pytest
+
+    c = HttpClient(base_url="http://localhost:3000")
+    with pytest.raises(ValueError, match="relevance_mode requires query"):
+        c.fact_check("claim", "context", relevance_mode="fast")
+
+
+def _fact_check_response_json(**extra) -> str:
+    base = {
+        "verdict": "verified",
+        "action": "allow",
+        "hallucination_rate": 0.0,
+        "mode": "lexical",
+        "total_claims": 1,
+        "supported_claims": 1,
+        "confidence": 0.9,
+        "claims": [],
+        "processing_time_ms": 12,
+    }
+    base.update(extra)
+    return json.dumps(base)
+
+
+def test_fact_check_sends_query_and_relevance_mode(monkeypatch):
+    c = HttpClient(base_url="http://localhost:3000")
+    captured = {}
+
+    def fake_request(method, path, body, **kwargs):
+        captured.update(body)
+        return _fact_check_response_json(
+            relevance={"score": 0.91, "verdict": "relevant"}
+        )
+
+    monkeypatch.setattr(c, "_request", fake_request)
+    resp = c.fact_check("claim", "context", query="What year?", relevance_mode="fast")
+    assert captured["query"] == "What year?"
+    assert captured["relevance_mode"] == "fast"
+    assert resp.relevance is not None
+    assert resp.relevance.verdict == "relevant"
+    assert resp.relevance.score == 0.91
+    assert resp.relevance.rationale is None
+    # Relevance never alters the factual verdict.
+    assert resp.verdict == "verified"
+
+
+def test_fact_check_omits_relevance_fields_when_unset(monkeypatch):
+    c = HttpClient(base_url="http://localhost:3000")
+    captured = {}
+
+    def fake_request(method, path, body, **kwargs):
+        captured.update(body)
+        return _fact_check_response_json()
+
+    monkeypatch.setattr(c, "_request", fake_request)
+    resp = c.fact_check("claim", "context")
+    assert "query" not in captured
+    assert "relevance_mode" not in captured
+    # Back-compat: servers without the relevance block still parse.
+    assert resp.relevance is None
+    assert resp.relevance_warning is None
+
+
+def test_fact_check_parses_relevance_warning(monkeypatch):
+    c = HttpClient(base_url="http://localhost:3000")
+
+    def fake_request(method, path, body, **kwargs):
+        return _fact_check_response_json(
+            relevance_warning="relevance not computed: embeddings unavailable"
+        )
+
+    monkeypatch.setattr(c, "_request", fake_request)
+    resp = c.fact_check("claim", "context", query="What year?")
+    assert resp.relevance is None
+    assert "embeddings unavailable" in resp.relevance_warning

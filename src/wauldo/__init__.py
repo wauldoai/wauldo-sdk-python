@@ -23,13 +23,19 @@ from .http_types import (
 from .http_types import (
     ChatRequest,
     ChatResponse,
+    CitationDetail,
+    ClaimResult,
     EmbeddingResponse,
+    FactCheckResponse,
     ModelList,
     OrchestratorResponse,
     RagAuditInfo,
     RagQueryResponse,
     RagSource,
     RagUploadResponse,
+    RelevanceResult,
+    UploadFileResponse,
+    VerifyCitationResponse,
 )
 from .history import HistoryClient
 from .mock_client import MockHttpClient
@@ -48,7 +54,7 @@ from .models import (
     ToolsListResult,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.20.0"
 __all__ = [
     # MCP Clients
     "AgentClient",
@@ -68,6 +74,13 @@ __all__ = [
     "RagQueryResponse",
     "RagSource",
     "RagUploadResponse",
+    # Fact-checking / Guard
+    "FactCheckResponse",
+    "ClaimResult",
+    "RelevanceResult",
+    "VerifyCitationResponse",
+    "CitationDetail",
+    "UploadFileResponse",
     # Exceptions
     "WauldoError",
     "AgentConnectionError",
