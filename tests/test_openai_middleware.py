@@ -417,7 +417,7 @@ def test_async_streaming_buffers_and_attaches_verdict():
                 collected.append(chunk)
             return stream, collected
 
-    stream, collected = asyncio.get_event_loop().run_until_complete(consume())
+    stream, collected = asyncio.run(consume())
     assert len(collected) == 3
     assert stream.wauldo is not None
     assert stream.wauldo.verdict == "CONFLICT"
@@ -467,7 +467,7 @@ def test_async_detection_returns_async_proxy():
             messages=[{"role": "user", "content": "x"}],
         )
         # Must be awaitable (the sync proxy returns the response directly)
-        resp = asyncio.get_event_loop().run_until_complete(coro)
+        resp = asyncio.run(coro)
     assert resp.wauldo.verdict == "SAFE"
 
 
