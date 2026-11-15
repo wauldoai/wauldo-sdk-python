@@ -73,10 +73,27 @@ def _parse_sse_stream(resp: object) -> Iterator[str]:
         buffer += remaining
 
 
+def raise_for_stream_error(parsed: object) -> None:
+    """Raise ``ServerError`` if an SSE payload is an in-band error.
+
+    OpenAI-compatible servers report a failure that happens after the stream
+    started as ``data: {"error": {"message": ..., "type": ...}}``. Treating it
+    as an ordinary chunk would end the stream as an empty success.
+    """
+    if not isinstance(parsed, dict) or not parsed.get("error"):
+        return
+    error = parsed["error"]
+    message = error.get("message") if isinstance(error, dict) else None
+    if not isinstance(message, str) or not message:
+        message = "An error occurred during streaming"
+    raise ServerError(message, data=error)
+
+
 def _extract_delta_content(payload: str) -> Optional[str]:
     """Extract content string from a single SSE JSON payload."""
     try:
         parsed = json.loads(payload)
+        raise_for_stream_error(parsed)
         choices = parsed.get("choices", [])
         if choices:
             content: str | None = choices[0].get("delta", {}).get("content")

@@ -118,7 +118,6 @@ def test_agents_create_sends_full_body(server):
     out = client.create(
         name="bot",
         wauldo_toml="[agent]\nname='x'\n[model]\nprovider='o'\nname='m'",
-        agents_md="---\nname: x\n---",
         description="test",
         preset="general_task",
     )
@@ -140,6 +139,8 @@ def test_agents_create_omits_none_optional_fields(server):
     client = AgentsClient(base_url=url)
     client.create(name="x", wauldo_toml="[agent]\n[model]")
     body = handler.requests[0]["body"]
+    # agents_md / mcp_json were removed from the client entirely; the server
+    # no longer reads them and the CLI no longer uploads mcp.json secrets.
     assert "agents_md" not in body
     assert "mcp_json" not in body
     assert "preset" not in body

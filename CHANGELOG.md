@@ -2,6 +2,18 @@
 
 All notable changes to the Wauldo Python SDK.
 
+## [0.21.0] - 2026-11-15
+
+### Added
+- `rag_upload` (sync + async) and `upload_file` (async): optional `pii_policy` — `"redact"` (server default) or `"keep"` to store contact details as sent. Unknown values raise `ValidationError`.
+
+### Fixed
+- `chat_stream` (sync + async): a failure reported by the server mid-stream (`data: {"error": {...}}`) now raises `ServerError` carrying the server's message and error body. It was skipped, so the stream ended as an empty, apparently successful answer.
+
+### Removed
+- **Breaking:** `agents_md` and `mcp_json` are removed from agent create/update and from the agent type. The server never used them and now ignores them; requests that still send them are accepted unchanged.
+- **Breaking (async `upload_file`):** the `tags` argument is removed (the server never stored it), and `timeout_ms` / `pii_policy` are keyword-only.
+
 ## [0.20.0] - 2026-06-10
 
 ### Added
@@ -21,7 +33,7 @@ All notable changes to the Wauldo Python SDK.
 
 ### Added
 - `HttpClient.fact_check(text, source_context=None, mode="lexical")` (sync) and `HttpClient.verify_citation(text, sources=None, threshold=None)` — public verify surface on the sync client, mirroring the async client. Targets `POST /v1/fact-check` and `POST /v1/verify`.
-- Typed response models `FactCheckResponse`, `ClaimResult`, `VerifyCitationResponse`, `CitationDetail`, `UploadFileResponse` — aligned with the real server DTOs in `wauldo-api/src/dtos/quality.rs`. All exported from `wauldo`.
+- Typed response models `FactCheckResponse`, `ClaimResult`, `VerifyCitationResponse`, `CitationDetail`, `UploadFileResponse` — aligned with the real server DTOs. All exported from `wauldo`.
 
 ### Fixed
 - `AsyncHttpClient` was unimportable: it referenced `FactCheckResponse` / `VerifyCitationResponse` / `UploadFileResponse`, none of which were defined (`ImportError`). All three now exist.

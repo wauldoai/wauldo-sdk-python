@@ -194,8 +194,8 @@ class OrchestratorResponse(BaseModel):
 
 
 # ── Fact-checking / Guard ────────────────────────────────────────────────
-# Mirrors the server DTOs in wauldo-api/src/dtos/quality.rs. Keep field
-# names in lockstep with `FactCheckResponse` / `ClaimResult` there — this
+# Mirrors the server-side fact-check DTOs. Keep field names in lockstep
+# with the `FactCheckResponse` / `ClaimResult` the API returns — this
 # is the honesty-critical surface every integration (NeMo, LangChain…)
 # builds on, so it must reflect the real `/v1/fact-check` shape exactly.
 

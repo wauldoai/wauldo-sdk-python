@@ -59,8 +59,6 @@ class Agent:
     model_name: str
     created_at: int
     updated_at: int
-    agents_md: Optional[str] = None
-    mcp_json: Optional[str] = None
     preset: Optional[str] = None
     _extra: Dict[str, Any] = field(default_factory=dict, repr=False)
 
@@ -78,8 +76,6 @@ class Agent:
             model_name=d.get("model_name", ""),
             created_at=d.get("created_at", 0),
             updated_at=d.get("updated_at", 0),
-            agents_md=d.get("agents_md"),
-            mcp_json=d.get("mcp_json"),
             preset=d.get("preset"),
             _extra=extra,
         )

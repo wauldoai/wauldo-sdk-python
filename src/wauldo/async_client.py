@@ -9,6 +9,7 @@ from typing import Any, List, Optional, Union
 
 from .async_transport import AsyncHttpTransport
 from .exceptions import ValidationError
+from .http_streaming import raise_for_stream_error
 from .http_types import (
     ChatRequest,
     ChatResponse,
@@ -21,6 +22,7 @@ from .http_types import (
     UploadFileResponse,
     VerifyCitationResponse,
 )
+from .pii import check_pii_policy
 
 logger = logging.getLogger("wauldo")
 
@@ -168,6 +170,7 @@ class AsyncHttpClient:
                         return
                     try:
                         parsed = json.loads(payload)
+                        raise_for_stream_error(parsed)
                         choices = parsed.get("choices", [])
                         if choices:
                             content = choices[0].get("delta", {}).get("content")
@@ -185,9 +188,13 @@ class AsyncHttpClient:
     _MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
     async def rag_upload(
-        self, content: str, filename: Optional[str] = None, timeout_ms: Optional[int] = None,
+        self,
+        content: str,
+        filename: Optional[str] = None,
+        timeout_ms: Optional[int] = None,
+        pii_policy: Optional[str] = None,
     ) -> RagUploadResponse:
-        """POST /v1/upload"""
+        """POST /v1/upload -- ``pii_policy``: ``"redact"`` (server default) or ``"keep"``."""
         if not content.strip():
             raise ValidationError("Content cannot be empty", field="content")
         if len(content) > self._MAX_UPLOAD_SIZE:
@@ -198,6 +205,8 @@ class AsyncHttpClient:
         body: dict[str, Any] = {"content": content}
         if filename:
             body["filename"] = filename
+        if pii_policy is not None:
+            body["pii_policy"] = check_pii_policy(pii_policy)
         data = await self._request("POST", "/v1/upload", body, timeout_ms=timeout_ms)
         return RagUploadResponse.model_validate_json(data)
 
@@ -205,10 +214,11 @@ class AsyncHttpClient:
         self,
         file_path: str,
         title: Optional[str] = None,
-        tags: Optional[str] = None,
+        *,
         timeout_ms: Optional[int] = None,
+        pii_policy: Optional[str] = None,
     ) -> UploadFileResponse:
-        """POST /v1/upload-file"""
+        """POST /v1/upload-file -- ``pii_policy``: ``"redact"`` (server default) or ``"keep"``."""
         import os
         if not os.path.isfile(file_path):
             raise ValidationError(f"File not found: {file_path}", field="file_path")
@@ -219,8 +229,13 @@ class AsyncHttpClient:
         form_data: dict[str, str] = {}
         if title:
             form_data["title"] = title
-        if tags:
-            form_data["tags"] = tags
+        if pii_policy is not None:
+            form_data["pii_policy"] = check_pii_policy(pii_policy)
+        # No `tags`: the server parsed the field, packed it, and read it back
+        # nowhere — only `title` and `source_url` ever reach a chunk. Sending
+        # it suggested documents were tagged for later filtering; they were
+        # not. `timeout_ms` is keyword-only so dropping the parameter cannot
+        # quietly slide a third positional argument into it.
 
         data = await self._request_multipart("POST", "/v1/upload-file", files, form_data, timeout_ms)
         return UploadFileResponse.model_validate_json(data)

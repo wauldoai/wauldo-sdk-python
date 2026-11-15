@@ -11,7 +11,6 @@ Example:
     >>> agent = agents.create(
     ...     name="sdr-bot",
     ...     wauldo_toml=open("wauldo.toml").read(),
-    ...     agents_md=open("AGENTS.md").read(),
     ... )
     >>> run = agents.run(agent["id"], "Qualify acme.com")
     >>> print(run["task_id"])
@@ -127,8 +126,7 @@ class AgentsClient:
         self,
         name: str,
         wauldo_toml: str,
-        agents_md: Optional[str] = None,
-        mcp_json: Optional[str] = None,
+        *,
         description: str = "",
         preset: Optional[str] = None,
     ) -> Agent:
@@ -138,10 +136,6 @@ class AgentsClient:
             "description": description,
             "wauldo_toml": wauldo_toml,
         }
-        if agents_md is not None:
-            body["agents_md"] = agents_md
-        if mcp_json is not None:
-            body["mcp_json"] = mcp_json
         if preset is not None:
             body["preset"] = preset
         return Agent.from_dict(self._request("POST", "/v1/agents", body))
@@ -162,8 +156,6 @@ class AgentsClient:
         *,
         description: Optional[str] = None,
         wauldo_toml: Optional[str] = None,
-        agents_md: Optional[str] = None,
-        mcp_json: Optional[str] = None,
         preset: Optional[str] = None,
     ) -> Agent:
         """PATCH /v1/agents/:id — partial update."""
@@ -172,10 +164,6 @@ class AgentsClient:
             patch["description"] = description
         if wauldo_toml is not None:
             patch["wauldo_toml"] = wauldo_toml
-        if agents_md is not None:
-            patch["agents_md"] = agents_md
-        if mcp_json is not None:
-            patch["mcp_json"] = mcp_json
         if preset is not None:
             patch["preset"] = preset
         return Agent.from_dict(self._request("PATCH", f"/v1/agents/{agent_id}", patch))

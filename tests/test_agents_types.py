@@ -50,7 +50,6 @@ def test_agent_from_dict_minimal():
     assert a.name == "bot"
     assert a.description == ""
     assert a.preset is None
-    assert a.agents_md is None
 
 
 def test_agent_from_dict_preserves_unknown_fields():

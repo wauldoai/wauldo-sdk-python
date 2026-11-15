@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wauldo.exceptions import WauldoError
+from wauldo.exceptions import ServerError, ValidationError, WauldoError
 from wauldo.http_client import HttpClient
 from wauldo.http_types import ChatRequest
 
@@ -128,6 +128,35 @@ def test_chat_stream_skips_malformed_json(mock_urlopen: MagicMock) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 4b. test_chat_stream_raises_on_in_band_error
+# ---------------------------------------------------------------------------
+
+
+@patch("wauldo.http_streaming.urlopen")
+def test_chat_stream_raises_on_in_band_error(mock_urlopen: MagicMock) -> None:
+    """A failure after the stream started must raise, not end as empty success."""
+    sse_payload = (
+        b'data: {"choices":[{"delta":{"role":"assistant"}}]}\n'
+        b"\n"
+        b'data: {"error":{"message":"Internal processing error (trace: t1)",'
+        b'"type":"server_error"}}\n'
+        b"\n"
+    )
+    mock_urlopen.return_value = BytesIO(sse_payload)
+
+    client = HttpClient(base_url="http://fake:3000", max_retries=1)
+    req = ChatRequest.quick("test-model", "Hi")
+    with pytest.raises(ServerError) as exc:
+        list(client.chat_stream(req))
+
+    assert exc.value.message == "Internal processing error (trace: t1)"
+    assert exc.value.data == {
+        "message": "Internal processing error (trace: t1)",
+        "type": "server_error",
+    }
+
+
+# ---------------------------------------------------------------------------
 # 5. test_embeddings
 # ---------------------------------------------------------------------------
 
@@ -163,6 +192,23 @@ def test_rag_upload(mock_urlopen: MagicMock) -> None:
 
     assert resp.document_id == "doc-abc"
     assert resp.chunks_count == 7
+
+
+@patch("wauldo.http_transport.urlopen")
+def test_rag_upload_sends_pii_policy(mock_urlopen: MagicMock) -> None:
+    mock_urlopen.return_value = _mock_urlopen_response({"document_id": "d", "chunks_count": 1})
+    client = HttpClient(base_url="http://fake:3000", max_retries=1)
+
+    client.rag_upload(content="Write to help@acme.example", pii_policy="keep")
+    sent = json.loads(mock_urlopen.call_args[0][0].data)
+    assert sent["pii_policy"] == "keep"
+
+    client.rag_upload(content="No choice made")
+    sent = json.loads(mock_urlopen.call_args[0][0].data)
+    assert "pii_policy" not in sent
+
+    with pytest.raises(ValidationError):
+        client.rag_upload(content="x", pii_policy="tag")
 
 
 # ---------------------------------------------------------------------------
@@ -245,3 +291,10 @@ def test_models_list(mock_urlopen: MagicMock) -> None:
     assert len(models.data) == 2
     assert models.data[0].id == "qwen2.5:7b"
     assert models.data[1].id == "llama3:8b"
+
+
+def test_raise_for_stream_error_ignores_falsy_error_field() -> None:
+    from wauldo.http_streaming import raise_for_stream_error
+
+    for parsed in ({"error": None}, {"error": False}, {"error": {}}, {"error": ""}, {"error": 0}):
+        raise_for_stream_error(parsed)  # must not raise

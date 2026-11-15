@@ -21,6 +21,7 @@ from .http_types import (
     RagUploadResponse,
     VerifyCitationResponse,
 )
+from .pii import check_pii_policy
 
 if TYPE_CHECKING:
     from .conversation import Conversation
@@ -144,7 +145,11 @@ class HttpClient:
     _MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 
     def rag_upload(
-        self, content: str, filename: Optional[str] = None, timeout_ms: Optional[int] = None,
+        self,
+        content: str,
+        filename: Optional[str] = None,
+        timeout_ms: Optional[int] = None,
+        pii_policy: Optional[str] = None,
     ) -> RagUploadResponse:
         """POST /v1/upload -- Upload document for RAG indexing.
 
@@ -152,6 +157,10 @@ class HttpClient:
             content: The document text to index (max 10 MB).
             filename: Optional source filename for metadata.
             timeout_ms: Per-request timeout in milliseconds.
+            pii_policy: ``"redact"`` replaces emails, phone numbers... with
+                placeholders; ``"keep"`` stores your text as sent (e.g. a
+                support address you want answers to quote). Default: the
+                server's, ``"redact"``.
 
         Returns:
             ``RagUploadResponse`` with document_id and chunks_count.
@@ -169,6 +178,8 @@ class HttpClient:
         body: dict[str, Any] = {"content": content}
         if filename:
             body["filename"] = filename
+        if pii_policy is not None:
+            body["pii_policy"] = check_pii_policy(pii_policy)
         data = self._request("POST", "/v1/upload", body, timeout_ms=timeout_ms)
         return RagUploadResponse.model_validate_json(data)
 
