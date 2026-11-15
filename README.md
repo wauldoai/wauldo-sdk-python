@@ -5,14 +5,14 @@
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
-> **Verified AI answers from your documents.** Every response includes source citations, confidence scores, and an audit trail — or we don't answer at all.
+> **Verified AI answers from your documents.** Every response includes source citations, a confidence score and an audit trail — and when your documents don't hold the answer, it says so.
 
-Official Python SDK for the [Wauldo API](https://wauldo.com) — the AI inference layer with smart model routing and zero hallucinations.
+Official Python SDK for the [Wauldo API](https://wauldo.com) — answers grounded in your documents, with sources, a confidence score and smart model routing.
 
 ## Why Wauldo?
 
-- **Zero hallucinations** — every answer is verified against source documents
-- **Smart model routing** — auto-selects the cheapest model that meets quality (save 40-80% on AI costs)
+- **Grounded answers** — every answer is checked against your source documents, with citations
+- **Smart model routing** — auto-selects the cheapest model that meets quality
 - **One API, 7+ providers** — OpenAI, Anthropic, Google, Qwen, Meta, Mistral, DeepSeek with automatic fallback
 - **OpenAI-compatible** — swap your `base_url`, keep your existing code
 - **Full audit trail** — confidence score, grounded status, model used, latency on every response
@@ -27,6 +27,8 @@ client = HttpClient(base_url="https://api.wauldo.com", api_key="YOUR_API_KEY")
 reply = client.chat_simple("auto", "What is Python?")
 print(reply)
 ```
+
+> Got your key from RapidAPI? Use the RapidAPI host instead — see [RapidAPI](#rapidapi).
 
 ## Installation
 
@@ -134,9 +136,11 @@ except WauldoError as e:
 
 ## RapidAPI
 
+Keys from the free RapidAPI plan work on the RapidAPI host, not on `api.wauldo.com` (Enterprise keys):
+
 ```python
 client = HttpClient(
-    base_url="https://api.wauldo.com",
+    base_url="https://smart-rag-api.p.rapidapi.com",
     headers={
         "X-RapidAPI-Key": "YOUR_RAPIDAPI_KEY",
         "X-RapidAPI-Host": "smart-rag-api.p.rapidapi.com",
@@ -144,15 +148,15 @@ client = HttpClient(
 )
 ```
 
-Get your free API key (300 req/month): [RapidAPI](https://rapidapi.com/binnewzzin/api/smart-rag-api)
+Get your free API key (500 verifications/month): [RapidAPI](https://rapidapi.com/binnewzzin/api/smart-rag-api)
 
 ## Links
 
 - [Website](https://wauldo.com)
 - [Documentation](https://wauldo.com/docs)
-- [Live Demo](https://api.wauldo.com/demo)
-- [Cost Calculator](https://wauldo.com/calculator)
-- [Status](https://wauldo.com/status)
+- [Live Demo](https://wauldo.com/demo)
+- [Benchmarks](https://wauldo.com/benchmarks)
+- [Pricing](https://wauldo.com/pricing)
 
 ## Contributing
 

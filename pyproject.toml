@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wauldo"
-version = "0.21.0"
+version = "0.21.1"
 description = "Official Python SDK for Wauldo — Verified AI answers from your documents"
 readme = "README.md"
 license = {text = "MIT"}
@@ -12,7 +12,7 @@ license-files = ["LICENSE"]
 authors = [
     {name = "Wauldo Team", email = "contact@wauldo.com"}
 ]
-keywords = ["ai", "llm", "openai", "privacy", "gdpr", "chatgpt", "api", "rapidapi", "nlp", "machine-learning"]
+keywords = ["ai", "llm", "rag", "fact-checking", "hallucination-detection", "openai", "api", "rapidapi", "nlp", "machine-learning"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
