@@ -30,6 +30,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from .exceptions import HttpError
+
 MAX_RESPONSE_SIZE: int = 10 * 1024 * 1024  # 10 MB
 
 TERMINAL_STATUSES = ("succeeded", "failed", "timed_out")
@@ -158,8 +160,9 @@ class WorkflowsClient:
     """HTTP client for the Wauldo Workflows API.
 
     Use the same ``base_url`` + ``api_key`` you use for ``AgentsClient``.
-    Network failures raise ``urllib.error.HTTPError`` (4xx/5xx) or
-    ``urllib.error.URLError``; JSON parse failures raise ``ValueError``.
+    HTTP error statuses (4xx/5xx) raise :class:`~wauldo.exceptions.HttpError`
+    (a ``WauldoError`` and a ``urllib.error.HTTPError``); network failures
+    raise ``urllib.error.URLError``; JSON parse failures raise ``ValueError``.
     """
 
     def __init__(
@@ -203,9 +206,7 @@ class WorkflowsClient:
                 return json.loads(raw.decode("utf-8"))
         except urllib.error.HTTPError as e:
             body_text = e.read(MAX_RESPONSE_SIZE).decode("utf-8", errors="replace")
-            raise urllib.error.HTTPError(
-                e.url, e.code, f"{e.reason}: {body_text}", e.headers, None
-            ) from None
+            raise HttpError(e.url, e.code, e.reason, e.headers, body_text) from None
 
     # ── CRUD ─────────────────────────────────────────────────────────
 

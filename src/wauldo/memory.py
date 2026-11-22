@@ -20,6 +20,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
+from .exceptions import HttpError
+
 #: Max bytes the client will accept from a single response. Protects against
 #: hostile or misbehaving servers that try to stream gigabytes.
 MAX_RESPONSE_SIZE: int = 10 * 1024 * 1024  # 10 MB
@@ -90,9 +92,7 @@ class MemoryClient:
                 return json.loads(raw.decode("utf-8")) if raw else None
         except urllib.error.HTTPError as e:
             body_text = e.read(MAX_RESPONSE_SIZE).decode("utf-8", errors="replace")
-            raise urllib.error.HTTPError(
-                e.url, e.code, f"{e.reason}: {body_text}", e.headers, None
-            ) from None
+            raise HttpError(e.url, e.code, e.reason, e.headers, body_text) from None
 
     # ── CRUD ─────────────────────────────────────────────────────────
 

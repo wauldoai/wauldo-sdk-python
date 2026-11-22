@@ -11,8 +11,11 @@ keeps working, new fields just aren't typed yet.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+from .task_errors import TaskErrorInfo
 
 
 # ── Enums (string values matching the server wire format) ────────────────
@@ -21,7 +24,7 @@ from typing import Any, Dict, List, Optional
 class Verdict(str):
     """Verification verdict returned on completed tasks.
 
-    Server-side enum from ``wauldo-api::routes::tasks::types::TaskVerification``.
+    Values match the ``verdict`` field of the API's task verification.
     String subclass so comparisons with raw strings keep working.
     """
 
@@ -38,6 +41,7 @@ class TaskStatus(str):
 
     QUEUED = "queued"
     RUNNING = "running"
+    PAUSED_FOR_APPROVAL = "paused_for_approval"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -103,20 +107,35 @@ class AgentList:
 
 @dataclass
 class AgentRunResponse:
-    """Return shape of ``POST /v1/agents/:id/runs``."""
+    """Return shape of ``POST /v1/agents/:id/runs``.
+
+    ``task`` is filled only when the run was requested with ``wait_sec``:
+    the task as it stood when the server answered — settled, with its
+    result and verification, if the run finished within the wait.
+
+    ``share_id`` and ``share_url`` are set when the run was requested with
+    ``auto_share=True`` and a public link could be registered.
+    """
 
     task_id: str
     agent_id: str
     status: str
     created_at: int
+    task: Optional["Task"] = None
+    share_id: Optional[str] = None
+    share_url: Optional[str] = None
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "AgentRunResponse":
+        task_raw = d.get("task")
         return cls(
             task_id=d["task_id"],
             agent_id=d.get("agent_id", ""),
             status=d.get("status", "queued"),
             created_at=d.get("created_at", 0),
+            task=Task.from_dict(task_raw) if isinstance(task_raw, dict) else None,
+            share_id=d.get("share_id"),
+            share_url=d.get("share_url"),
         )
 
 
@@ -185,6 +204,24 @@ class ShareResponse:
             share_id=d["share_id"],
             url=d["url"],
             expires_at=int(exp) if exp is not None else None,
+        )
+
+
+@dataclass
+class HitlResponse:
+    """Result of :meth:`AgentsClient.pause_task`, ``approve_task`` or
+    ``reject_task``: the task's status before and after the transition."""
+
+    task_id: str
+    previous_status: str
+    new_status: str
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "HitlResponse":
+        return cls(
+            task_id=d["task_id"],
+            previous_status=TaskStatus(d.get("previous_status", "")),
+            new_status=TaskStatus(d.get("new_status", "")),
         )
 
 
@@ -280,6 +317,23 @@ class TaskVerification:
 
 
 @dataclass
+class TaskDecision:
+    """A human decision taken on a task (:meth:`AgentsClient.pause_task`,
+    ``approve_task``, ``reject_task``), with the reviewer's note if one was
+    sent."""
+
+    #: ``"pause"``, ``"approve"`` or ``"reject"``.
+    action: str
+    #: When the decision was applied (Unix seconds).
+    at: int
+    reason: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "TaskDecision":
+        return cls(action=d.get("action", ""), at=d.get("at", 0), reason=d.get("reason"))
+
+
+@dataclass
 class Task:
     """Full task record (``GET /v1/tasks/:id``)."""
 
@@ -295,11 +349,28 @@ class Task:
     partial_result: Optional[str] = None
     verification: Optional[TaskVerification] = None
     journal: Optional[Dict[str, Any]] = None
+    #: True when the run's stream withheld its output (injection detected):
+    #: the stream's terminal event carries a marker in place of ``result``.
+    output_withheld: bool = False
+    #: Human decisions taken on the task, oldest first (empty when none).
+    #: Only the 20 most recent are kept: past that, the oldest is dropped.
+    decisions: List[TaskDecision] = field(default_factory=list)
     _extra: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
     def is_done(self) -> bool:
         return self.status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED)
+
+    @property
+    def is_settled(self) -> bool:
+        """Nothing will change until you act: done, or paused for approval."""
+        return self.is_done or self.status == TaskStatus.PAUSED_FOR_APPROVAL
+
+    @property
+    def error_info(self) -> Optional[TaskErrorInfo]:
+        """:attr:`error` split into its stable code and its message
+        (:class:`TaskErrorInfo`); ``None`` when the task has no error."""
+        return TaskErrorInfo.parse(self.error)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Task":
@@ -319,11 +390,22 @@ class Task:
             partial_result=d.get("partial_result"),
             verification=TaskVerification.from_dict(verif_raw) if isinstance(verif_raw, dict) else None,
             journal=d.get("journal"),
+            output_withheld=bool(d.get("output_withheld", False)),
+            decisions=[
+                TaskDecision.from_dict(x) for x in d.get("decisions") or [] if isinstance(x, dict)
+            ],
             _extra=extra,
         )
 
 
 # ── SSE streaming ────────────────────────────────────────────────────────
+
+
+#: State names of the stream's last event, one per terminal status.
+TERMINAL_STATE_NAMES = frozenset({"TASK_COMPLETED", "TASK_FAILED", "TASK_CANCELLED"})
+#: ``condition`` of the stream's last event: ``"terminal"`` when the run ends
+#: on the stream, ``"Already finished"`` when it was over at subscription.
+TERMINAL_CONDITIONS = frozenset({"terminal", "Already finished"})
 
 
 @dataclass
@@ -349,6 +431,35 @@ class StateTransition:
     to_state: Optional[str] = None
     validation_notes: List[str] = field(default_factory=list)
     _extra: Dict[str, Any] = field(default_factory=dict, repr=False)
+
+    @property
+    def is_terminal(self) -> bool:
+        """True for the stream's last event (``TASK_COMPLETED``, ``TASK_FAILED``,
+        ``TASK_CANCELLED``): the run is over and :meth:`terminal_payload` holds
+        its result, so there is nothing left to fetch. Exact names, not a
+        prefix, and a terminal ``condition``: a workflow state may be called
+        anything, ``TASK_COMPLETED`` included.
+        """
+        return (
+            self.to_state is None
+            and self.state_name in TERMINAL_STATE_NAMES
+            and self.condition in TERMINAL_CONDITIONS
+        )
+
+    def terminal_payload(self) -> Optional[Dict[str, Any]]:
+        """The terminal event's content: ``task_id``, ``status``, ``result``,
+        ``error`` and ``verification`` (the same fields as ``GET /v1/tasks/:id``).
+        ``None`` on an ordinary transition, or when the server withheld it.
+        """
+        if not self.is_terminal or not self.raw_output:
+            return None
+        try:
+            payload = json.loads(self.raw_output)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict) or "task_id" not in payload or "status" not in payload:
+            return None
+        return payload
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "StateTransition":

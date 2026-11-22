@@ -2,6 +2,38 @@
 
 All notable changes to the Wauldo Python SDK.
 
+## [0.22.0] - 2026-11-22
+
+### Added
+- `AgentsClient.run_and_wait(agent_id, input, ...)`: run an agent and get the settled `Task` back in one call. The server holds the response for up to `MAX_WAIT_SEC` (50 s), so a quick run comes back verified in a single round-trip; a longer one is followed with `wait_for_task`.
+- `AgentsClient.run(..., wait_sec=)` and `get_task(..., wait_sec=)`: the server holds the response until the task settles or the delay elapses (`?wait=`). `AgentRunResponse.task` carries the task when `wait_sec` was given.
+- `Task.is_settled` and `TaskStatus.PAUSED_FOR_APPROVAL`.
+- `AgentsClient(max_retries=3, retry_backoff_sec=0.5)`: transient failures are retried — 429 and 503 on any call, 500/502/504 and connection failures on `GET` only, so a replayed `POST` can never run an agent twice and a replayed cancel never answers 409 for a cancel that worked. `Retry-After` is honoured (capped at 30 s), the wait otherwise doubles from `retry_backoff_sec` (capped at 8 s, with jitter); timeouts are never retried. `max_retries=0` disables.
+- `a2a_invoke` goes through the same request path as the other calls (retries, errors).
+- `StateTransition.is_terminal` and `StateTransition.terminal_payload()`: the stream's last event (`TASK_COMPLETED` / `TASK_FAILED` / `TASK_CANCELLED`) carries `task_id`, `status`, `result`, `error` and `verification`, so a streaming client has nothing left to fetch.
+- `run(..., webhook_url=, max_retries=, auto_share=)` (and the same keywords on `run_and_wait`): the server POSTs the task to `webhook_url` when the run completes or fails (a private or internal address is refused with a 400); `max_retries` sets the retries of the run on the server (default 3, capped at 10 — not the client's HTTP retries); `auto_share=True` publishes the run at creation and `AgentRunResponse.share_id` / `share_url` carry the link.
+- `create(..., custom_preset=)`: an inline workflow at creation, used from the agent's first run (it used to need `create` then `create_revision`).
+- `pause_task`, `approve_task`, `reject_task` (optional `reason`), returning `HitlResponse(task_id, previous_status, new_status)`: pause a queued or running task for a human decision, then approve it (it is queued and runs again) or reject it (cancelled). The `reason` (at most 1000 characters) is stored with the decision and listed in `Task.decisions` (`TaskDecision(action, at, reason)`), which keeps the 20 most recent decisions. A task left paused 7 days without a decision is cancelled by the server (`Task.error` is `PAUSED_EXPIRED_ERROR`); approving or rejecting it then answers HTTP 409.
+- `resume_task(task_id)`: run a failed or cancelled task again, as a new task (`AgentRunResponse` with the new `task_id`).
+- `get_task(..., include_journal=False)`: leave the execution journal out of the response. Not sent by default.
+- `AgentsClient` and its companions are exported from `wauldo` (`from wauldo import AgentsClient, Task, TaskVerification, StateTransition, ...`), as are `MemoryClient` and `WorkflowsClient`; `from wauldo.agents import AgentsClient` keeps working. The README's agents section uses the root import and says how `AgentsClient` (deployed agents) differs from `AgentClient` (local MCP server).
+- `Task.error_info` and `TaskErrorInfo.parse(error)`: a failed task's `error` (`code: message`) split into its stable `code` and its `message` (`TaskErrorCode`, `TASK_ERROR_CODES`: `invalid_preset`, `invalid_agent_config`, `rate_limited`, `timeout`, `model_unavailable`, `run_failed`). An unknown code is kept as sent; an error that does not start with a code has `code=None`. `Task.error` is unchanged.
+- `HttpError`: what `AgentsClient`, `MemoryClient` and `WorkflowsClient` raise on an HTTP error status. It is a `ServerError` (so `except WauldoError` catches it) and still a `urllib.error.HTTPError` with the same message, so existing `except HTTPError` code keeps working; `body` holds the response body.
+- `TaskTimeoutError` (exported from `wauldo`), with `task_id`, `last_status` and `timeout`: raised when a wait runs out. It is both an `AgentTimeoutError` and a builtin `TimeoutError`, so existing `except TimeoutError` code keeps working. Its message starts as before, then says the task may still be running and how to keep waiting (`wait_for_task(task_id)` again).
+
+### Fixed
+- `cancel_task` sent `DELETE /v1/tasks/:id`, which the server maps to *deleting a finished task*: a running task could not be cancelled, and a finished one was erased. It now sends `PUT` (the server's cancel) and returns the cancelled `Task`. The old behaviour is available as `delete_task`.
+- `wait_for_task` and `run_and_wait` gave up after 180 s by default: slower runs were reported as timed out although the server went on to finish them. The default is now 360 s (`DEFAULT_WAIT_TIMEOUT_SEC`), which covers ordinary runs; it is not a bound on how long a run may take. For a long run, pass a larger `timeout_sec`, use `stream_task`, or give the run a `webhook_url`. Each request inside the wait is still a 30 s long poll; the HTTP timeout is unchanged.
+- `wait_for_task`, `run_and_wait` and the fallback of `stream_task` raised a bare builtin `TimeoutError`, which `except AgentTimeoutError` (the SDK's documented timeout error) did not catch. They raise `TaskTimeoutError`.
+- `stream_task` always ends on the terminal event. When the server has no stream for the task (404: still queued, server restarted) or the stream closes before its last event (connection cut, 30-minute limit), the task is long-polled until it settles (`STREAM_FALLBACK_TIMEOUT_SEC`, waiting out the 429/5xx/refused connections of a server restarting) and a terminal event built from it is yielded — condition `"Already finished"`, same payload, with the verification exactly as the server sent it, and `WITHHELD_RESULT` in place of the result when the stream withheld the run's output (`Task.output_withheld`) — so a loop that stops on `is_terminal` always gets the result. It used to raise the 404, or end without the result. A task paused for approval ends the stream without a terminal event: approve it, then stream again.
+- `StateTransition.is_terminal` also requires a terminal `condition` (`"terminal"` or `"Already finished"`, `TERMINAL_CONDITIONS`): a workflow state named `TASK_COMPLETED` no longer ends `stream_task` before the run's real terminal event.
+- `Task.output_withheld`: true when the run's stream withheld its output.
+- README: the failed-task example sent an unknown or missing code to "Fix the agent". Only `invalid_preset` and `invalid_agent_config` need a change to the agent; every other code, including one this version does not know, is retried, as in the other SDKs.
+
+### Changed
+- `AsyncClient.get_analytics_traffic()` requires an administrator credential: the endpoint reports traffic across every account of the server, so any other key or token gets HTTP 403 (`ServerError`, `code=403`).
+- **BREAKING:** `wait_for_task` returns a task that is `paused_for_approval` (the caller has to act) instead of raising `TimeoutError` on it. It also long-polls the server (`LONG_POLL_SEC`, 30 s per request) instead of sleeping `poll_interval_sec` between polls, so the result arrives the moment it lands; the sleep remains as the fallback against a server that answers at once.
+
 ## [0.21.1] - 2026-11-15
 
 ### Changed

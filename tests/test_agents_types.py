@@ -173,3 +173,29 @@ def test_state_transition_from_dict():
     assert e.duration_ms == 10428
     assert e.success is True
     assert e.validation_notes == []
+
+
+def test_agent_run_response_from_dict_carries_the_task_when_present():
+    from wauldo.agents_types import AgentRunResponse
+
+    d = {
+        "task_id": "tk1",
+        "agent_id": "bot",
+        "status": "completed",
+        "created_at": 1,
+        "task": {"task_id": "tk1", "status": "completed", "result": "42"},
+    }
+    out = AgentRunResponse.from_dict(d)
+    assert out.task is not None
+    assert out.task.result == "42"
+    assert out.task.is_settled
+    assert AgentRunResponse.from_dict({"task_id": "tk1"}).task is None
+
+
+def test_task_is_settled_covers_paused_for_approval():
+    from wauldo.agents_types import Task
+
+    paused = Task.from_dict({"task_id": "t", "status": "paused_for_approval"})
+    assert paused.is_settled and not paused.is_done
+    running = Task.from_dict({"task_id": "t", "status": "running"})
+    assert not running.is_settled

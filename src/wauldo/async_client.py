@@ -357,7 +357,9 @@ class AsyncHttpClient:
         return AnalyticsResponse.model_validate_json(data)
 
     async def get_analytics_traffic(self) -> "TrafficSummary":
-        """GET /v1/analytics/traffic"""
+        """GET /v1/analytics/traffic — traffic across every account of the
+        server. Requires an administrator credential: any other key or token
+        gets HTTP 403 (raised as :class:`ServerError` with ``code=403``)."""
         from .http_types import TrafficSummary
         data = await self._request("GET", "/v1/analytics/traffic")
         return TrafficSummary.model_validate_json(data)

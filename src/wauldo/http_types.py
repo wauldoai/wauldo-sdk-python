@@ -123,7 +123,7 @@ class RagUploadResponse(BaseModel):
 class UploadFileResponse(BaseModel):
     """Response from POST /v1/upload-file (multipart document upload).
 
-    Mirrors the server ``UploadResponse`` in wauldo-api. Only the two
+    Mirrors the server's upload response. Only the two
     core fields are required; the richer fields are optional so the SDK
     stays forward/backward compatible across server versions.
     """
