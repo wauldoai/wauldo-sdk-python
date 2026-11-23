@@ -543,3 +543,38 @@ def test_delete_task_sends_delete(server):
     client = AgentsClient(base_url=url)
     assert client.delete_task("tk1") is None
     assert handler.requests[0]["method"] == "DELETE"
+
+
+def test_get_task_over_http_returns_the_typed_task(server):
+    url, handler = server
+    handler.responses["GET /v1/tasks/tk1"] = (
+        200,
+        _task_json("completed", result="42", share_url="https://wauldo.com/r/r_x"),
+    )
+    task = AgentsClient(base_url=url).get_task("tk1")
+    assert task.status == "completed"
+    assert task.result == "42"
+    assert task.share_url == "https://wauldo.com/r/r_x"
+    assert handler.requests[0]["method"] == "GET"
+    assert handler.requests[0]["path"] == "/v1/tasks/tk1"
+
+
+def test_share_task_posts_and_parses_the_share(server):
+    url, handler = server
+    handler.responses["POST /v1/tasks/tk1/share"] = (
+        200,
+        {"share_id": "r_x", "url": "https://wauldo.com/r/r_x", "expires_at": None},
+    )
+    share = AgentsClient(base_url=url).share_task("tk1")
+    assert share.share_id == "r_x"
+    assert share.url == "https://wauldo.com/r/r_x"
+    assert share.expires_at is None
+    assert handler.requests[0]["method"] == "POST"
+
+
+def test_unshare_task_sends_delete_on_the_share(server):
+    url, handler = server
+    handler.responses["DELETE /v1/tasks/tk1/share"] = (204, None)
+    assert AgentsClient(base_url=url).unshare_task("tk1") is None
+    assert handler.requests[0]["method"] == "DELETE"
+    assert handler.requests[0]["path"] == "/v1/tasks/tk1/share"

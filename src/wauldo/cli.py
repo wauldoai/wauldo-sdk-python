@@ -87,7 +87,7 @@ def cmd_upload(args: argparse.Namespace) -> None:
 
     ext = os.path.splitext(path)[1].lower()
     if ext in (".pdf", ".docx", ".doc", ".png", ".jpg", ".jpeg"):
-        resp = client.upload_file(file_path=path, title=args.title, tags=args.tags)
+        resp = client.upload_file(file_path=path, title=args.title)
     else:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -209,7 +209,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     p_upload = sub.add_parser("upload", help="upload a document for RAG indexing")
     p_upload.add_argument("file", help="path to document (PDF, DOCX, TXT, etc.)")
     p_upload.add_argument("--title", help="document title")
-    p_upload.add_argument("--tags", help="comma-separated tags")
+    # Accepted so existing scripts keep working; the server stores no tags.
+    p_upload.add_argument("--tags", help="ignored (documents are not tagged)")
 
     # query
     p_query = sub.add_parser("query", help="ask a question against uploaded docs")

@@ -2,6 +2,19 @@
 
 All notable changes to the Wauldo Python SDK.
 
+## [0.23.0] - 2026-11-23
+
+### Added
+- `HttpClient.upload_file(file_path, title=None, *, timeout_ms=None, pii_policy=None)`: upload a PDF, DOCX, image or text file (`POST /v1/upload-file`, multipart, 10 MB at most for the whole request: file, file name and form fields) from the synchronous client, as `AsyncHttpClient.upload_file` already did. A missing or empty file, or one whose request would exceed the limit, raises `ValidationError` before anything is sent (same rule in `AsyncHttpClient.upload_file`). `MockHttpClient.upload_file` mirrors it.
+- `Verdict.INSUFFICIENT_CLAIMS`: the verdict of an answer too short or empty to extract a claim to verify.
+- `STREAM_LAGGED`: the `state_name` of the notice the server sends when the stream fell behind the run. It is not a workflow state and not terminal: the run goes on, the terminal event still comes, and `get_task` holds the full run. `stream_task` passes it on and keeps reading.
+- `TaskVerification.honesty_signals` (`HonestySignals`), `contract_attestation` (`ContractAttestation`), `failure_reason` and `failure_stage`; `Task.share_id`, `Task.share_url` and `Task.race_result` (`RaceResult`, `RaceCandidate`). All optional, `None` when the server does not send them; the new types are exported from `wauldo`.
+
+### Fixed
+- `rag_upload` (sync and async) checked the length of the text in characters against the 10 MB limit, but the limit applies to the request body in bytes: a text of 4 million CJK characters (12 MB) passed the check and was refused by the server. The check now measures the body exactly as it is sent (file name included) and raises `ValidationError` before sending. The body is sent as UTF-8 JSON, like the TypeScript and Rust SDKs (it escaped non-ASCII characters, up to 12 bytes each).
+- `AsyncHttpClient.upload_file` set its multipart `Content-Type` on the whole client while the upload was in flight, so a concurrent request of the same client could be sent with it instead of JSON. The content type now goes with the upload's own request only. The upload is also encoded like the synchronous one (a random boundary, quotes and line breaks in the file name replaced, an empty file refused), the file is closed after reading, and it is read off the event loop.
+- `wauldo upload` on a `.pdf`, `.docx` or image file raised `AttributeError` (the synchronous client had no `upload_file`), and passed a `tags` argument the upload does not take. It now uploads the file; `--tags` is accepted and ignored, as documents are not tagged.
+
 ## [0.22.0] - 2026-11-22
 
 ### Added

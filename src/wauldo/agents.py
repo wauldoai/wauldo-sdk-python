@@ -598,8 +598,11 @@ class AgentsClient(_HitlMixin):
         projection (no ``custom_preset`` / ``wauldo_toml`` / system
         prompt / tool args ever leave the tenant).
 
-        Free-tier tenants get a 30-day TTL ; paid tenants get
-        ``expires_at = None`` (no expiration).
+        A share expires 30 days after it is published (``expires_at``,
+        epoch milliseconds; ``None`` would mean no expiry, which no plan has
+        today). The shared run stays
+        available for as long as its link is valid: until it expires, is
+        withdrawn with :meth:`unshare_task`, or the task is deleted.
         """
         return ShareResponse.from_dict(
             self._request("POST", f"/v1/tasks/{task_id}/share", {})
@@ -679,6 +682,11 @@ class AgentsClient(_HitlMixin):
         terminal event built from it, with condition ``"Already finished"``,
         ends the generator. A task paused for
         approval ends it without a terminal event: approve, then stream again.
+
+        An event named :data:`STREAM_LAGGED` is a notice, not a state of the
+        run: the stream fell behind, so some transitions were skipped and the
+        next ones are withheld. It does not end the generator; the terminal
+        event still comes, and :meth:`get_task` holds the full run.
 
         Usage::
 

@@ -26,6 +26,7 @@ def test_verdict_enum_values_match_server():
     assert Verdict.BLOCK == "BLOCK"
     assert Verdict.CONFLICT == "CONFLICT"
     assert Verdict.UNVERIFIED == "UNVERIFIED"
+    assert Verdict.INSUFFICIENT_CLAIMS == "INSUFFICIENT_CLAIMS"
 
 
 def test_task_status_values_match_server():
@@ -105,6 +106,67 @@ def test_task_verification_from_dict_populated():
     assert len(v.claims) == 1
     assert v.claims[0].supported is True
     assert v.claims[0].confidence == 0.9
+
+
+def test_task_verification_reads_signals_attestation_and_failure():
+    v = TaskVerification.from_dict({
+        "verdict": "INSUFFICIENT_CLAIMS",
+        "hallucination_rate": 0.0,
+        "confidence": 0.0,
+        "trust_score": 0.0,
+        "verification_source": "source_documents",
+        "honesty_signals": {"is_non_answer": True, "json_garbage": False,
+                            "matched_patterns": ["empty"]},
+        "contract_attestation": {
+            "matches": False,
+            "verdict": "DEGRADED",
+            "replay_token": "rt",
+            "violations": [{"kind": "disallowed_tool", "state": "PLAN", "tool": "web_search"}],
+        },
+        "failure_reason": "LLM provider timeout",
+        "failure_stage": "fact_check",
+    })
+    assert v.verdict == Verdict.INSUFFICIENT_CLAIMS
+    assert v.honesty_signals is not None and v.honesty_signals.is_non_answer is True
+    assert v.honesty_signals.matched_patterns == ["empty"]
+    assert v.contract_attestation is not None
+    assert v.contract_attestation.verdict == "DEGRADED"
+    assert v.contract_attestation.violations[0]["tool"] == "web_search"
+    assert v.failure_reason == "LLM provider timeout"
+    assert v.failure_stage == "fact_check"
+
+
+def test_task_verification_without_the_new_fields_leaves_them_none():
+    v = TaskVerification.from_dict({"verdict": "SAFE", "trust_score": 1.0})
+    assert v.honesty_signals is None
+    assert v.contract_attestation is None
+    assert v.failure_reason is None and v.failure_stage is None
+
+
+def test_task_from_dict_reads_share_and_race_result():
+    t = Task.from_dict({
+        "task_id": "t",
+        "status": "completed",
+        "share_id": "r_x",
+        "share_url": "https://wauldo.com/r/r_x",
+        "race_result": {
+            "winner": "model-a",
+            "winner_score": 0.9,
+            "candidates": [
+                {"model": "model-a", "score": 0.9, "timed_out": False},
+                {"model": "model-b", "score": None, "timed_out": True},
+            ],
+        },
+    })
+    assert t.share_id == "r_x"
+    assert t.share_url == "https://wauldo.com/r/r_x"
+    assert t.race_result is not None and t.race_result.winner == "model-a"
+    assert t.race_result.candidates[1].timed_out is True
+    assert t.race_result.candidates[1].score is None
+    # Typed fields no longer land in the untyped leftovers.
+    assert "share_url" not in t._extra
+    bare = Task.from_dict({"task_id": "t", "status": "running"})
+    assert bare.share_url is None and bare.race_result is None
 
 
 def test_task_verification_from_dict_unverified_carries_message():

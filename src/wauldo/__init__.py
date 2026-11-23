@@ -21,6 +21,7 @@ from .agents import (
 )
 from .agents_hitl import MAX_HITL_REASON_CHARS, PAUSED_EXPIRED_ERROR
 from .agents_types import (
+    STREAM_LAGGED,
     TERMINAL_CONDITIONS,
     TERMINAL_STATE_NAMES,
     Agent,
@@ -91,9 +92,15 @@ from .models import (
     ToolsListResult,
 )
 from .task_errors import TASK_ERROR_CODES, TaskErrorCode, TaskErrorInfo
+from .task_verification import (
+    ContractAttestation,
+    HonestySignals,
+    RaceCandidate,
+    RaceResult,
+)
 from .workflows import WorkflowsClient
 
-__version__ = "0.22.0"
+__version__ = "0.23.0"
 __all__ = [
     # Deployed agents + tasks
     "AgentsClient",
@@ -112,12 +119,17 @@ __all__ = [
     "TaskClaim",
     "TaskDecision",
     "Verdict",
+    "HonestySignals",
+    "ContractAttestation",
+    "RaceResult",
+    "RaceCandidate",
     "StateTransition",
     "TaskErrorInfo",
     "TaskErrorCode",
     "TASK_ERROR_CODES",
     "TERMINAL_CONDITIONS",
     "TERMINAL_STATE_NAMES",
+    "STREAM_LAGGED",
     "ALREADY_FINISHED_CONDITION",
     "WITHHELD_RESULT",
     "DEFAULT_WAIT_TIMEOUT_SEC",

@@ -65,6 +65,10 @@ print(response.choices[0].message.content)
 upload = client.rag_upload(content="Contract text here...", filename="contract.txt")
 print(f"Indexed {upload.chunks_count} chunks")
 
+# Or a file (PDF, DOCX, image, text; 10 MB max for the whole request) — text extraction happens server-side
+upload = client.upload_file("contract.pdf", title="Q3 Contract")
+print(f"Indexed {upload.chunks_count} chunks ({upload.content_type})")
+
 # Query with verified answer
 result = client.rag_query("What are the payment terms?")
 print(f"Answer: {result.answer}")
@@ -130,6 +134,8 @@ print(task.verification.support_score)    # 0.0 – 1.0
 # Need progress events? Start the run, then stream each workflow state as it completes.
 run = agents.run(agent.id, "Can I return a shirt 30 days after purchase?")
 for event in agents.stream_task(run.task_id):
+    # STREAM_LAGGED is a notice, not a state: the stream fell behind, the run goes on and
+    # the terminal event still comes (agents.get_task holds every state of the run).
     print(f"  {event.state_name}: {event.duration_ms}ms")
     if event.is_terminal:  # last event: result + verification, nothing left to fetch
         payload = event.terminal_payload()  # None when the server withheld the output

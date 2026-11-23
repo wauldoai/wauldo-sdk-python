@@ -60,8 +60,15 @@ class AsyncHttpTransport:
             self._session = None
 
     async def execute(
-        self, method: str, url: str, data: Optional[bytes] = None, timeout_ms: Optional[int] = None,
+        self,
+        method: str,
+        url: str,
+        data: Optional[bytes] = None,
+        timeout_ms: Optional[int] = None,
+        content_type: Optional[str] = None,
     ) -> bytes:
+        """``content_type`` replaces the default ``Content-Type`` (JSON) for
+        this request only, e.g. for a multipart upload."""
         aiohttp = _import_aiohttp()
 
         effective_timeout = timeout_ms / 1000.0 if timeout_ms else self.timeout
@@ -76,9 +83,12 @@ class AsyncHttpTransport:
 
             import time
             start = time.monotonic()
+            headers = self._headers_fn()
+            if content_type:
+                headers["Content-Type"] = content_type
             try:
                 async with session.request(
-                    method, url, data=data, headers=self._headers_fn(), timeout=ct,
+                    method, url, data=data, headers=headers, timeout=ct,
                 ) as resp:
                     body = await resp.read()
                     elapsed = (time.monotonic() - start) * 1000

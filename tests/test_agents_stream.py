@@ -13,6 +13,7 @@ from typing import Dict, List, Tuple, Union
 import pytest
 
 import wauldo.agents as agents_module
+from wauldo import STREAM_LAGGED
 from wauldo.agents import WITHHELD_RESULT, AgentsClient
 
 Reply = Tuple[int, str, str]  # status, content type, body
@@ -264,3 +265,50 @@ def test_fallback_waits_out_a_restart(server, monkeypatch):
     events = list(client.stream_task("t1"))
     assert events[-1].terminal_payload()["result"] == "30 days"
     assert handler.hits.count("/v1/tasks/t1") == 10
+
+
+# The notice the server sends when the stream fell behind the run, and a
+# transition withheld after it, as the server shapes them.
+LAG_CONDITION = "Output withheld: the stream fell behind; the task record holds the full run"
+LAG_NOTICE = {
+    "state_name": STREAM_LAGGED,
+    "to_state": None,
+    "condition": LAG_CONDITION,
+    "raw_output": "",
+    "validation_notes": ["3 transitions skipped"],
+    "timestamp": 1,
+    "success": False,
+    "retry_count": 0,
+}
+WITHHELD_AFTER_LAG = {**_transition("REVIEW"), "condition": LAG_CONDITION, "raw_output": ""}
+
+
+def test_a_lag_notice_does_not_end_the_stream(server):
+    client, handler = server
+    terminal = {
+        "state_name": "TASK_COMPLETED",
+        "to_state": None,
+        "condition": "terminal",
+        "raw_output": json.dumps({"task_id": "t1", "status": "completed", "result": "ok"}),
+        "timestamp": 2,
+        "success": True,
+    }
+    handler.routes = {"/v1/tasks/t1/stream": _sse(LAG_NOTICE, WITHHELD_AFTER_LAG, terminal)}
+    events = list(client.stream_task("t1"))
+    assert [e.state_name for e in events] == [STREAM_LAGGED, "REVIEW", "TASK_COMPLETED"]
+    assert not events[0].is_terminal
+    assert events[0].terminal_payload() is None
+    assert events[0].validation_notes == ["3 transitions skipped"]
+    assert events[-1].terminal_payload()["result"] == "ok"
+    assert handler.hits == ["/v1/tasks/t1/stream"]
+
+
+def test_a_stream_closed_after_a_lag_notice_is_completed_from_the_task(server):
+    client, handler = server
+    handler.routes = {
+        "/v1/tasks/t1/stream": _sse(LAG_NOTICE),
+        "/v1/tasks/t1": _json(200, _task("completed")),
+    }
+    events = list(client.stream_task("t1"))
+    assert [e.state_name for e in events] == [STREAM_LAGGED, "TASK_COMPLETED"]
+    assert events[-1].terminal_payload()["result"] == "30 days"

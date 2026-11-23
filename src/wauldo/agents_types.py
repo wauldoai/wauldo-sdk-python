@@ -16,7 +16,14 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .task_errors import TaskErrorInfo
-
+from .task_verification import (  # noqa: F401  (re-exported)
+    ContractAttestation,
+    HonestySignals,
+    RaceCandidate,
+    RaceResult,
+    TaskClaim,
+    TaskVerification,
+)
 
 # ── Enums (string values matching the server wire format) ────────────────
 
@@ -34,6 +41,8 @@ class Verdict(str):
     BLOCK = "BLOCK"
     CONFLICT = "CONFLICT"
     UNVERIFIED = "UNVERIFIED"
+    #: The answer was too short or empty to extract a claim to verify.
+    INSUFFICIENT_CLAIMS = "INSUFFICIENT_CLAIMS"
 
 
 class TaskStatus(str):
@@ -188,9 +197,11 @@ class CreateRevisionResponse:
 class ShareResponse:
     """Result of publishing or fetching a public share link for a task.
 
-    ``expires_at`` is epoch milliseconds, or ``None`` for paid tenants
-    (no expiration). Free-tier shares default to a 30-day TTL ; once
-    elapsed, the public ``GET /v1/runs/<share_id>`` returns 404.
+    ``expires_at`` is epoch milliseconds: a share expires 30 days after it
+    is published (``None`` would mean no expiry; no plan has that today).
+    Once elapsed, the public ``GET /v1/runs/<share_id>`` returns 404. The shared
+    run stays available for as long as its link is valid: until
+    ``expires_at``, :meth:`AgentsClient.unshare_task`, or the task's deletion.
     """
 
     share_id: str
@@ -246,77 +257,6 @@ class ListRevisionsResponse:
 
 
 @dataclass
-class TaskClaim:
-    """A single verified claim from the agent output."""
-
-    text: str
-    supported: bool
-    confidence: float
-
-
-@dataclass
-class TaskVerification:
-    """Verification block attached to completed tasks.
-
-    See the ``verdict`` enum :class:`Verdict` for possible values. When
-    ``verification_source == "prompt_only"`` the ``confidence`` and
-    ``hallucination_rate`` fields reflect self-consistency only; rely on
-    ``verdict`` + ``support_score`` + ``message`` as authoritative.
-
-    .. note::
-        ``support_score`` is the public name for the same numeric value
-        the wire protocol calls ``trust_score`` (0-1 fraction of claims
-        supported by the sources). Both attributes are populated and
-        always equal — ``trust_score`` is kept for backward compatibility
-        with code written before the 2026-04-17 reframe and the JSON
-        wire field is unchanged.
-    """
-
-    verdict: str
-    hallucination_rate: float
-    confidence: float
-    trust_score: float
-    verification_source: str
-    claims: List[TaskClaim] = field(default_factory=list)
-    verification_retries: int = 0
-    message: Optional[str] = None
-    sources_cited: List[int] = field(default_factory=list)
-    stripped_claims: List[str] = field(default_factory=list)
-
-    @property
-    def support_score(self) -> float:
-        """Fraction of claims supported by the sources (0-1).
-
-        Alias for :attr:`trust_score`. The wire format keeps
-        ``trust_score`` for backward compatibility; new code should
-        prefer ``support_score`` to match the public marketing name.
-        """
-        return self.trust_score
-
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "TaskVerification":
-        return cls(
-            verdict=d.get("verdict", ""),
-            hallucination_rate=float(d.get("hallucination_rate", 0.0)),
-            confidence=float(d.get("confidence", 0.0)),
-            trust_score=float(d.get("trust_score", 0.0)),
-            verification_source=d.get("verification_source", ""),
-            claims=[
-                TaskClaim(
-                    text=c.get("text", ""),
-                    supported=bool(c.get("supported", False)),
-                    confidence=float(c.get("confidence", 0.0)),
-                )
-                for c in d.get("claims", [])
-            ],
-            verification_retries=int(d.get("verification_retries", 0)),
-            message=d.get("message"),
-            sources_cited=list(d.get("sources_cited", [])),
-            stripped_claims=list(d.get("stripped_claims", [])),
-        )
-
-
-@dataclass
 class TaskDecision:
     """A human decision taken on a task (:meth:`AgentsClient.pause_task`,
     ``approve_task``, ``reject_task``), with the reviewer's note if one was
@@ -355,6 +295,12 @@ class Task:
     #: Human decisions taken on the task, oldest first (empty when none).
     #: Only the 20 most recent are kept: past that, the oldest is dropped.
     decisions: List[TaskDecision] = field(default_factory=list)
+    #: Id and public URL of the run's share, when it was published
+    #: (``auto_share`` or :meth:`AgentsClient.share_task`).
+    share_id: Optional[str] = None
+    share_url: Optional[str] = None
+    #: Outcome of a fact-check race, for runs that raced several models.
+    race_result: Optional[RaceResult] = None
     _extra: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
@@ -377,6 +323,7 @@ class Task:
         known = {f.name for f in cls.__dataclass_fields__.values()} - {"_extra"}
         extra = {k: v for k, v in d.items() if k not in known}
         verif_raw = d.get("verification")
+        race_raw = d.get("race_result")
         return cls(
             task_id=d.get("task_id", d.get("id", "")),
             tenant_id=d.get("tenant_id", ""),
@@ -394,6 +341,9 @@ class Task:
             decisions=[
                 TaskDecision.from_dict(x) for x in d.get("decisions") or [] if isinstance(x, dict)
             ],
+            share_id=d.get("share_id"),
+            share_url=d.get("share_url"),
+            race_result=RaceResult.from_dict(race_raw) if isinstance(race_raw, dict) else None,
             _extra=extra,
         )
 
@@ -406,6 +356,13 @@ TERMINAL_STATE_NAMES = frozenset({"TASK_COMPLETED", "TASK_FAILED", "TASK_CANCELL
 #: ``condition`` of the stream's last event: ``"terminal"`` when the run ends
 #: on the stream, ``"Already finished"`` when it was over at subscription.
 TERMINAL_CONDITIONS = frozenset({"terminal", "Already finished"})
+#: ``state_name`` of the notice the server sends when the stream fell behind
+#: the run. Not a workflow state and not terminal: the run goes on and the
+#: terminal event still comes. ``validation_notes`` says how many transitions
+#: were skipped; the ones after it are withheld (their ``condition`` says so)
+#: up to the terminal event, and the task record (``get_task``) holds the
+#: full run.
+STREAM_LAGGED = "STREAM_LAGGED"
 
 
 @dataclass

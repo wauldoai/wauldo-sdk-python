@@ -36,9 +36,18 @@ class HttpTransport:
         self._on_error = on_error
 
     def execute(
-        self, method: str, url: str, data: Optional[bytes] = None, timeout_ms: Optional[int] = None,
+        self,
+        method: str,
+        url: str,
+        data: Optional[bytes] = None,
+        timeout_ms: Optional[int] = None,
+        content_type: Optional[str] = None,
     ) -> bytes:
-        """Execute HTTP request with exponential backoff on retryable errors."""
+        """Execute HTTP request with exponential backoff on retryable errors.
+
+        ``content_type`` replaces the default ``Content-Type`` (JSON), e.g.
+        for a multipart upload.
+        """
         effective_timeout = timeout_ms / 1000.0 if timeout_ms else self.timeout
         last_error: Optional[Exception] = None
         for attempt in range(self.max_retries):
@@ -46,7 +55,10 @@ class HttpTransport:
                 self._on_request(method, url)
             logger.debug("Request: %s %s", method, url)
             start = time.monotonic()
-            req = Request(url, data=data, headers=self._headers_fn(), method=method)
+            headers = self._headers_fn()
+            if content_type:
+                headers["Content-Type"] = content_type
+            req = Request(url, data=data, headers=headers, method=method)
             try:
                 with urlopen(req, timeout=effective_timeout) as resp:
                     body = resp.read()

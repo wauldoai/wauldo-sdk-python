@@ -19,8 +19,10 @@ from .http_types import (
     OrchestratorResponse,
     RagQueryResponse,
     RagUploadResponse,
+    UploadFileResponse,
     VerifyCitationResponse,
 )
+from .multipart import MAX_UPLOAD_FILE_SIZE, encode_text_upload, encode_upload_file
 from .pii import check_pii_policy
 
 if TYPE_CHECKING:
@@ -142,7 +144,7 @@ class HttpClient:
 
     # ── RAG endpoints ────────────────────────────────────────────────────
 
-    _MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+    _MAX_UPLOAD_SIZE = MAX_UPLOAD_FILE_SIZE  # 10 MB, the whole request body
 
     def rag_upload(
         self,
@@ -154,7 +156,9 @@ class HttpClient:
         """POST /v1/upload -- Upload document for RAG indexing.
 
         Args:
-            content: The document text to index (max 10 MB).
+            content: The document text to index. The 10 MB limit counts the
+                request as sent, in UTF-8 (2 to 4 bytes for a non-ASCII
+                character).
             filename: Optional source filename for metadata.
             timeout_ms: Per-request timeout in milliseconds.
             pii_policy: ``"redact"`` replaces emails, phone numbers... with
@@ -166,22 +170,61 @@ class HttpClient:
             ``RagUploadResponse`` with document_id and chunks_count.
 
         Raises:
-            ValidationError: If content is empty or exceeds 10 MB.
+            ValidationError: If content is empty, or the encoded request
+                exceeds 10 MB (checked before anything is sent).
         """
         if not content.strip():
             raise ValidationError("Content cannot be empty", field="content")
-        if len(content) > self._MAX_UPLOAD_SIZE:
-            raise ValidationError(
-                f"Content exceeds maximum size ({len(content)} > {self._MAX_UPLOAD_SIZE} bytes)",
-                field="content",
-            )
         body: dict[str, Any] = {"content": content}
         if filename:
             body["filename"] = filename
         if pii_policy is not None:
             body["pii_policy"] = check_pii_policy(pii_policy)
-        data = self._request("POST", "/v1/upload", body, timeout_ms=timeout_ms)
-        return RagUploadResponse.model_validate_json(data)
+        raw = self._transport.execute(
+            "POST", f"{self.base_url}/v1/upload", data=encode_text_upload(body),
+            timeout_ms=timeout_ms,
+        )
+        return RagUploadResponse.model_validate_json(raw)
+
+    def upload_file(
+        self,
+        file_path: str,
+        title: Optional[str] = None,
+        *,
+        timeout_ms: Optional[int] = None,
+        pii_policy: Optional[str] = None,
+    ) -> UploadFileResponse:
+        """POST /v1/upload-file -- Upload a file (PDF, DOCX, image, text) for
+        RAG indexing; the server extracts its text.
+
+        Args:
+            file_path: The file to upload. The 10 MB limit counts the whole
+                request (file, name and fields). Its name tells the server
+                the file type.
+            title: Optional document title stored with its passages.
+            timeout_ms: Per-request timeout in milliseconds.
+            pii_policy: ``"redact"`` (the server default) or ``"keep"``, as
+                for :meth:`rag_upload`.
+
+        Returns:
+            ``UploadFileResponse`` with document_id, chunks_count,
+            content_type and the extraction quality.
+
+        Raises:
+            ValidationError: If the file is missing or empty, the request
+                would exceed 10 MB, or ``pii_policy`` is unknown.
+        """
+        fields: dict[str, str] = {}
+        if title:
+            fields["title"] = title
+        if pii_policy is not None:
+            fields["pii_policy"] = check_pii_policy(pii_policy)
+        body, content_type = encode_upload_file(file_path, fields)
+        raw = self._transport.execute(
+            "POST", f"{self.base_url}/v1/upload-file", data=body,
+            timeout_ms=timeout_ms, content_type=content_type,
+        )
+        return UploadFileResponse.model_validate_json(raw)
 
     def rag_query(
         self,

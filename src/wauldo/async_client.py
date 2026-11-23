@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -22,6 +23,7 @@ from .http_types import (
     UploadFileResponse,
     VerifyCitationResponse,
 )
+from .multipart import MAX_UPLOAD_FILE_SIZE, encode_text_upload, encode_upload_file
 from .pii import check_pii_policy
 
 logger = logging.getLogger("wauldo")
@@ -73,39 +75,6 @@ class AsyncHttpClient:
         url = f"{self.base_url}{path}"
         data = json.dumps(body).encode() if body else None
         return await self._transport.execute(method, url, data=data, timeout_ms=timeout_ms)
-
-    async def _request_multipart(
-        self, method: str, path: str, files: dict, form_data: dict, timeout_ms: Optional[int] = None,
-    ) -> bytes:
-        boundary = "----WauldoSDKBoundary"
-        body_parts: list[bytes] = []
-        for key, (filename, fileobj) in files.items():
-            body_parts.append(
-                f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"; '
-                f'filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode()
-            )
-            body_parts.append(fileobj.read() if hasattr(fileobj, "read") else fileobj)
-            body_parts.append(b"\r\n")
-        for key, value in form_data.items():
-            body_parts.append(
-                f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode()
-            )
-        body_parts.append(f"--{boundary}--\r\n".encode())
-        data = b"".join(body_parts)
-
-        url = f"{self.base_url}{path}"
-        old_headers_fn = self._transport._headers_fn
-
-        def multipart_headers() -> dict[str, str]:
-            h = old_headers_fn()
-            h["Content-Type"] = f"multipart/form-data; boundary={boundary}"
-            return h
-
-        self._transport._headers_fn = multipart_headers
-        try:
-            return await self._transport.execute(method, url, data=data, timeout_ms=timeout_ms)
-        finally:
-            self._transport._headers_fn = old_headers_fn
 
     async def close(self) -> None:
         await self._transport.close()
@@ -185,7 +154,7 @@ class AsyncHttpClient:
         data = await self._request("POST", "/v1/embeddings", body)
         return EmbeddingResponse.model_validate_json(data)
 
-    _MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+    _MAX_UPLOAD_SIZE = MAX_UPLOAD_FILE_SIZE  # 10 MB, the whole request body
 
     async def rag_upload(
         self,
@@ -194,20 +163,23 @@ class AsyncHttpClient:
         timeout_ms: Optional[int] = None,
         pii_policy: Optional[str] = None,
     ) -> RagUploadResponse:
-        """POST /v1/upload -- ``pii_policy``: ``"redact"`` (server default) or ``"keep"``."""
+        """POST /v1/upload -- ``pii_policy``: ``"redact"`` (server default) or ``"keep"``.
+
+        Same checks as :meth:`HttpClient.rag_upload`: empty content, or a
+        request over 10 MB once encoded as JSON, raises ``ValidationError``
+        before anything is sent.
+        """
         if not content.strip():
             raise ValidationError("Content cannot be empty", field="content")
-        if len(content) > self._MAX_UPLOAD_SIZE:
-            raise ValidationError(
-                f"Content exceeds maximum size ({len(content)} > {self._MAX_UPLOAD_SIZE} bytes)",
-                field="content",
-            )
         body: dict[str, Any] = {"content": content}
         if filename:
             body["filename"] = filename
         if pii_policy is not None:
             body["pii_policy"] = check_pii_policy(pii_policy)
-        data = await self._request("POST", "/v1/upload", body, timeout_ms=timeout_ms)
+        data = await self._transport.execute(
+            "POST", f"{self.base_url}/v1/upload", data=encode_text_upload(body),
+            timeout_ms=timeout_ms,
+        )
         return RagUploadResponse.model_validate_json(data)
 
     async def upload_file(
@@ -218,26 +190,31 @@ class AsyncHttpClient:
         timeout_ms: Optional[int] = None,
         pii_policy: Optional[str] = None,
     ) -> UploadFileResponse:
-        """POST /v1/upload-file -- ``pii_policy``: ``"redact"`` (server default) or ``"keep"``."""
-        import os
-        if not os.path.isfile(file_path):
-            raise ValidationError(f"File not found: {file_path}", field="file_path")
-        if os.path.getsize(file_path) > self._MAX_UPLOAD_SIZE:
-            raise ValidationError("File exceeds 10 MB limit", field="file_path")
+        """POST /v1/upload-file -- ``pii_policy``: ``"redact"`` (server default) or ``"keep"``.
 
-        files = {"file": (os.path.basename(file_path), open(file_path, "rb"))}
-        form_data: dict[str, str] = {}
+        Same encoding and checks as :meth:`HttpClient.upload_file`: a missing
+        or empty file, or a request over 10 MB (file name and form fields
+        included), raises ``ValidationError`` before anything is sent.
+        """
+        fields: dict[str, str] = {}
         if title:
-            form_data["title"] = title
+            fields["title"] = title
         if pii_policy is not None:
-            form_data["pii_policy"] = check_pii_policy(pii_policy)
+            fields["pii_policy"] = check_pii_policy(pii_policy)
         # No `tags`: the server parsed the field, packed it, and read it back
         # nowhere — only `title` and `source_url` ever reach a chunk. Sending
         # it suggested documents were tagged for later filtering; they were
         # not. `timeout_ms` is keyword-only so dropping the parameter cannot
         # quietly slide a third positional argument into it.
 
-        data = await self._request_multipart("POST", "/v1/upload-file", files, form_data, timeout_ms)
+        # Read and encoded off the event loop (up to 10 MB). The multipart
+        # Content-Type goes with this request only: other requests of this
+        # client keep sending JSON while the upload is in flight.
+        body, content_type = await asyncio.to_thread(encode_upload_file, file_path, fields)
+        data = await self._transport.execute(
+            "POST", f"{self.base_url}/v1/upload-file", data=body,
+            timeout_ms=timeout_ms, content_type=content_type,
+        )
         return UploadFileResponse.model_validate_json(data)
 
     async def rag_query(
