@@ -100,7 +100,7 @@ from .task_verification import (
 )
 from .workflows import WorkflowsClient
 
-__version__ = "0.23.0"
+__version__ = "0.23.1"
 __all__ = [
     # Deployed agents + tasks
     "AgentsClient",

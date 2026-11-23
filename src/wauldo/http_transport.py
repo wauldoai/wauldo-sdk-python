@@ -7,9 +7,10 @@ import socket
 import time
 from typing import Callable, Optional
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from .exceptions import AgentConnectionError, AgentTimeoutError, ServerError, WauldoError
+from .http_pool import ConnectionPool
 
 logger = logging.getLogger("wauldo")
 
@@ -34,6 +35,7 @@ class HttpTransport:
         self._on_request = on_request
         self._on_response = on_response
         self._on_error = on_error
+        self._pool = ConnectionPool()
 
     def execute(
         self,
@@ -60,7 +62,7 @@ class HttpTransport:
                 headers["Content-Type"] = content_type
             req = Request(url, data=data, headers=headers, method=method)
             try:
-                with urlopen(req, timeout=effective_timeout) as resp:
+                with self._pool.urlopen(req, effective_timeout) as resp:
                     body = resp.read()
                     elapsed = (time.monotonic() - start) * 1000
                     logger.debug("Response: %s in %.0fms", resp.status, elapsed)

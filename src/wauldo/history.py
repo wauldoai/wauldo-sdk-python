@@ -1,7 +1,7 @@
-"""History API client — Wauldo Funnel #1 audit log.
+"""History API client: list, export and erase a tenant's task audit log.
 
 Read-only access to a tenant's task history (every completed task is
-persisted to a tenant-scoped DynamoDB audit log on the server side, and
+persisted to a tenant-scoped audit log on the server side, and
 exposed via /v1/history). Mirrors :class:`MemoryClient` shape so a
 caller already familiar with the Memory API has zero ramp-up.
 
@@ -132,9 +132,10 @@ class HistoryClient:
         """GET /v1/history — paginated audit log page.
 
         Returns ``{"items": [...], "next_cursor": str|None, "enabled": bool}``.
-        ``enabled=false`` signals the server hasn't wired its DynamoDB
-        store (self-host without IAM perm); ``items=[]`` with ``enabled=true``
-        means the window is empty for this tenant.
+        ``enabled=false`` signals the server has no audit store
+        configured (a self-hosted server can run without one);
+        ``items=[]`` with ``enabled=true`` means the window is empty for
+        this tenant.
 
         Pass ``cursor`` from a previous response's ``next_cursor`` to
         paginate. Filters compose with AND.

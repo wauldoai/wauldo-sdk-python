@@ -48,7 +48,7 @@ _CHAT_BODY = {
 # ---------------------------------------------------------------------------
 
 
-@patch("wauldo.http_transport.urlopen")
+@patch("wauldo.http_pool.ConnectionPool.urlopen")
 def test_chat_returns_response(mock_urlopen: MagicMock) -> None:
     mock_urlopen.return_value = _mock_urlopen_response(_CHAT_BODY)
 
@@ -67,7 +67,7 @@ def test_chat_returns_response(mock_urlopen: MagicMock) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("wauldo.http_transport.urlopen")
+@patch("wauldo.http_pool.ConnectionPool.urlopen")
 def test_chat_simple_shortcut(mock_urlopen: MagicMock) -> None:
     mock_urlopen.return_value = _mock_urlopen_response(_CHAT_BODY)
 
@@ -161,7 +161,7 @@ def test_chat_stream_raises_on_in_band_error(mock_urlopen: MagicMock) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("wauldo.http_transport.urlopen")
+@patch("wauldo.http_pool.ConnectionPool.urlopen")
 def test_embeddings(mock_urlopen: MagicMock) -> None:
     body = {
         "data": [{"embedding": [0.1, 0.2, 0.3], "index": 0}],
@@ -182,7 +182,7 @@ def test_embeddings(mock_urlopen: MagicMock) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("wauldo.http_transport.urlopen")
+@patch("wauldo.http_pool.ConnectionPool.urlopen")
 def test_rag_upload(mock_urlopen: MagicMock) -> None:
     body = {"document_id": "doc-abc", "chunks_count": 7}
     mock_urlopen.return_value = _mock_urlopen_response(body)
@@ -194,7 +194,7 @@ def test_rag_upload(mock_urlopen: MagicMock) -> None:
     assert resp.chunks_count == 7
 
 
-@patch("wauldo.http_transport.urlopen")
+@patch("wauldo.http_pool.ConnectionPool.urlopen")
 def test_rag_upload_sends_pii_policy(mock_urlopen: MagicMock) -> None:
     mock_urlopen.return_value = _mock_urlopen_response({"document_id": "d", "chunks_count": 1})
     client = HttpClient(base_url="http://fake:3000", max_retries=1)
@@ -216,7 +216,7 @@ def test_rag_upload_sends_pii_policy(mock_urlopen: MagicMock) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("wauldo.http_transport.urlopen")
+@patch("wauldo.http_pool.ConnectionPool.urlopen")
 def test_rag_query(mock_urlopen: MagicMock) -> None:
     body = {
         "answer": "Rust is a systems language",
@@ -239,7 +239,7 @@ def test_rag_query(mock_urlopen: MagicMock) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("wauldo.http_transport.urlopen")
+@patch("wauldo.http_pool.ConnectionPool.urlopen")
 def test_http_error_raises(mock_urlopen: MagicMock) -> None:
     from urllib.error import HTTPError
 
@@ -264,7 +264,7 @@ def test_http_error_raises(mock_urlopen: MagicMock) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("wauldo.http_transport.urlopen")
+@patch("wauldo.http_pool.ConnectionPool.urlopen")
 def test_models_list(mock_urlopen: MagicMock) -> None:
     body = {
         "object": "list",

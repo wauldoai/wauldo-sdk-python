@@ -2,6 +2,13 @@
 
 All notable changes to the Wauldo Python SDK.
 
+## [0.23.1] - 2026-11-23
+
+### Changed
+- `HttpClient` and `AgentsClient` keep their HTTPS connections open between calls instead of opening a new one, with a new TCP + TLS handshake, for every request. `wait_for_task` now polls over a single connection. Headers, timeouts, TLS verification, retries and exceptions are unchanged.
+- A kept connection idle for more than 50 s is closed instead of reused. One the server closed in the meantime is replaced, and the request is sent again only if it could not be sent or is a `GET`/`HEAD`: a `POST` is never sent twice.
+- Still on `urllib.request.urlopen`, one connection per request: requests that go through a proxy set in the environment (`HTTP_PROXY`/`HTTPS_PROXY`, `NO_PROXY` honored), and streams (`chat_stream`, `stream_task`). An opener installed with `urllib.request.install_opener()` no longer applies to the other requests of these two clients.
+
 ## [0.23.0] - 2026-11-23
 
 ### Added

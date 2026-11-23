@@ -40,6 +40,7 @@ from .agents_types import (
     Task,
 )
 from .exceptions import HttpError, TaskTimeoutError
+from .http_pool import ConnectionPool
 
 #: The verification modes the server accepts; anything else is a 400.
 VerificationMode = Literal["strict", "balanced", "permissive"]
@@ -266,6 +267,7 @@ class AgentsClient(_HitlMixin):
         self.timeout = timeout
         self.max_retries = max(0, int(max_retries))
         self.retry_backoff_sec = retry_backoff_sec
+        self._pool = ConnectionPool()
 
     # ── Helpers ──────────────────────────────────────────────────────
 
@@ -306,7 +308,7 @@ class AgentsClient(_HitlMixin):
                 method=method,
             )
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                with self._pool.urlopen(req, self.timeout) as resp:
                     if resp.status == 204:
                         return None
                     raw = _bounded_read(resp)
